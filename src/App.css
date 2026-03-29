@@ -1,0 +1,803 @@
+/* ── Layout ───────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0.6rem 1.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.app-header h1 { font-size: 1.15rem; font-weight: 700; }
+.app-header p  { font-size: 0.82rem; opacity: 0.85; }
+.app-version-badge {
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.7;
+  background: rgba(255,255,255,0.2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  vertical-align: middle;
+  letter-spacing: 0.03em;
+}
+
+.app-footer {
+  font-size: 0.62rem;
+  color: rgba(255,255,255,0.55);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  text-align: right;
+  padding: 2px 14px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 260px;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Panels ───────────────────────────────────────────── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+}
+.panel-library { background: #f8f9fc; border-right: 1px solid #e4e6f0; }
+.panel-editor  { background: #f1f3f9; border-right: 1px solid #e4e6f0; }
+.panel-preview { background: #f8f9fc; }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.875rem;
+  border-bottom: 1px solid #e4e6f0;
+  flex-shrink: 0;
+}
+.panel-header h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ── Badges & common buttons ──────────────────────────── */
+.badge {
+  background: #667eea;
+  color: #fff;
+  border-radius: 9999px;
+  padding: 0 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.btn-text:hover { background: #eef0ff; }
+
+.btn-primary {
+  background: #667eea;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-primary:hover { background: #5a6fd6; }
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+.btn-icon:hover { color: #ef4444; background: #fee2e2; }
+
+.btn-export {
+  display: block;
+  width: calc(100% - 1.75rem);
+  margin: 0.625rem 0.875rem;
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+.btn-export:hover { background: #059669; }
+
+/* ── Add Form ─────────────────────────────────────────── */
+.add-form {
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid #e4e6f0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.form-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.form-row input,
+.form-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  background: #fff;
+  color: #374151;
+}
+.form-row input:focus,
+.form-row select:focus {
+  outline: 2px solid #667eea;
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.time-row { gap: 4px; }
+.time-sep { color: #9ca3af; font-size: 0.82rem; flex-shrink: 0; }
+
+/* ── Filter chips ─────────────────────────────────────── */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 5px 0.875rem;
+  border-bottom: 1px solid #e4e6f0;
+  flex-shrink: 0;
+}
+.filter-chip {
+  background: #e9eaf0;
+  border: none;
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  color: #4b5563;
+}
+.filter-chip:hover { background: #d4d6e8; }
+.filter-chip.active { background: #667eea; color: #fff; }
+
+/* Row-based filter chips (colored per row) */
+.filter-chip-row {
+  background: transparent;
+  border: 1.5px solid currentColor;
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.1s;
+}
+.filter-chip-row:hover { opacity: 0.75; }
+
+/* ── Transit List & Cards ─────────────────────────────── */
+.transit-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.transit-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #667eea;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.transit-card.type-flight  { border-left-color: #3b82f6; }
+.transit-card.type-train   { border-left-color: #22c55e; }
+.transit-card.type-bus     { border-left-color: #f59e0b; }
+.transit-card.type-shuttle { border-left-color: #a78bfa; }
+.transit-card.type-custom  { border-left-color: #9ca3af; }
+
+.card-icon   { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.card-info   { flex: 1; min-width: 0; }
+.card-name   { font-size: 0.8rem; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-time   { font-size: 0.72rem; color: #6b7280; }
+.card-category { font-size: 0.68rem; color: #8b5cf6; margin-top: 1px; }
+.card-notes  { font-size: 0.68rem; color: #9ca3af; margin-top: 1px; }
+.card-duration { color: #9ca3af; }
+
+/* Inline edit form inside a card */
+.transit-card.editing { flex-direction: column; align-items: stretch; padding: 0; border-left-width: 3px; }
+.card-edit-form { padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.card-edit-actions { justify-content: flex-start; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* Delete with confirmation in card edit */
+.delete-confirm-text { font-size: 0.72rem; color: #ef4444; flex-shrink: 0; }
+.btn-danger-sm {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 5px;
+  color: #dc2626;
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-danger-sm:hover { background: #fecaca; }
+
+/* ── Plan bar (Gantt top) ─────────────────────────────── */
+.plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #d8dae8;
+  background: #fff;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.plan-bar-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+/* Undo / Redo buttons */
+.undo-redo-group {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.btn-undoredo {
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  color: #6b7280;
+  line-height: 1;
+}
+.btn-undoredo:hover:not(:disabled) { background: #f0f2ff; color: #667eea; border-color: #a5b4fc; }
+.btn-undoredo:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.plan-create-form {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+.plan-create-form input {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  width: 110px;
+  background: #fff;
+}
+.plan-create-form input:focus {
+  outline: 2px solid #667eea;
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.validity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-valid   { background: #22c55e; }
+.dot-invalid { background: #ef4444; }
+
+/* ── Gantt chart ──────────────────────────────────────── */
+.gantt-scroll {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.gantt {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header row: label + time axis */
+.gantt-header-row {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #e8eaf4;
+  border-bottom: 2px solid #c8cbe0;
+}
+
+.gantt-label-col {
+  width: 230px;
+  min-width: 230px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid #c8cbe0;
+}
+
+.gantt-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Time axis */
+.gantt-axis {
+  flex: 1;
+  position: relative;
+  height: 28px;
+}
+
+.gantt-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+.gantt-tick-label {
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 500;
+  background: #e8eaf4;
+  padding: 0 2px;
+}
+
+/* Data rows */
+.gantt-row {
+  display: flex;
+  min-height: 54px;
+  border-bottom: 1px solid #e4e6f0;
+}
+.gantt-row:hover { background: rgba(102, 126, 234, 0.03); }
+
+.gantt-row-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Grid lines */
+.gantt-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #e0e2ee;
+  pointer-events: none;
+}
+
+/* Transit blocks */
+.gantt-block {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 5px;
+  padding: 3px 6px 3px 8px;
+  cursor: grab;
+  overflow: hidden;
+  border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: filter 0.1s, box-shadow 0.1s;
+  min-width: 44px;
+  user-select: none;
+
+  /* default: unfilled/muted */
+  background: rgba(150, 155, 180, 0.18);
+  border-color: rgba(150, 155, 180, 0.4);
+  color: #555;
+}
+
+.gantt-block:hover {
+  filter: brightness(0.93);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  z-index: 2;
+}
+.gantt-block:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+.gantt-block:active { cursor: grabbing; }
+
+/* Source block: in plan → dashed border, stronger fill (alpha/borderStyle set inline) */
+.gantt-block.in-plan { border-width: 2px; }
+
+/* Plan lane blocks: use --plan-color set via inline style */
+.gantt-block.plan-block { cursor: context-menu; }
+.gantt-block.plan-block.reserved {
+  background: var(--plan-color, #667eea);
+  border-color: var(--plan-color, #5a6fd6);
+  color: #fff;
+  filter: none;
+  min-width: 110px;
+}
+
+/* Conflicting plan block: red border override */
+.gantt-block.plan-block.conflict {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.45);
+}
+
+.block-row-name {
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  opacity: 0.85;
+}
+.block-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.block-time {
+  font-size: 0.62rem;
+  opacity: 0.85;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+/* Plan membership badges on source blocks */
+.block-plan-badges {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.block-plan-badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 0.54rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* Resize handles */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 3;
+  cursor: ew-resize;
+}
+.resize-l { left: 0; border-radius: 5px 0 0 5px; }
+.resize-r { right: 0; border-radius: 0 5px 5px 0; }
+.resize-handle:hover { background: rgba(255,255,255,0.3); }
+
+/* ── Plan lanes (Gantt bottom) ────────────────────────── */
+.gantt-plan-separator {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  background: #eef0f8;
+  border-top: 1px solid #c8cbe0;
+  border-bottom: 1px solid #c8cbe0;
+}
+.gantt-separator-label { color: #9ca3af !important; font-style: italic; }
+
+.gantt-plan-row { background: #fafbff; min-height: 60px; }
+.gantt-plan-row.plan-row-selected { background: #f0f4ff; }
+
+.gantt-plan-label-col {
+  display: flex !important;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding-right: 4px;
+}
+.gantt-plan-label-col:hover { background: rgba(102,126,234,0.07); }
+
+.plan-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.plan-row-invalid {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+.plan-row-del {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Plan footer ──────────────────────────────────────── */
+.plan-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-top: 2px solid #c8cbe0;
+  background: #fff;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.plan-footer-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ef4444;
+}
+.plan-footer-sep { color: #d1d5db; }
+.plan-footer-hint { font-size: 0.7rem; color: #9ca3af; }
+
+/* ── Context menu ─────────────────────────────────────── */
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #e4e6f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  min-width: 160px;
+  overflow: hidden;
+  padding: 4px 0;
+}
+.ctx-header {
+  padding: 5px 12px 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #f3f4f6;
+  margin-bottom: 2px;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  color: #374151;
+  cursor: pointer;
+  text-align: left;
+}
+.ctx-item:hover { background: #f5f7ff; }
+.ctx-item.ctx-item-in { background: #f0f4ff; font-weight: 600; }
+.ctx-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ctx-check {
+  font-size: 0.75rem;
+  width: 12px;
+  flex-shrink: 0;
+  color: #667eea;
+}
+.ctx-warn { color: #f59e0b; font-size: 0.72rem; }
+
+/* ── Itinerary Preview ────────────────────────────────── */
+.timeline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 0.875rem;
+  border-bottom: 1px solid #e4e6f0;
+  flex-shrink: 0;
+}
+.timeline-tab {
+  background: #e9eaf0;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: #4b5563;
+}
+.timeline-tab:hover  { background: #d4d6e8; }
+.timeline-tab.active { background: #667eea; color: #fff; }
+
+.warning-banner {
+  margin: 0.5rem 0.875rem 0;
+  padding: 5px 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #92400e;
+}
+
+.itinerary-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid #e4e6f0;
+  flex-shrink: 0;
+}
+.summary-item   { display: flex; flex-direction: column; align-items: center; flex: 1; }
+.summary-label  { font-size: 0.65rem; color: #9ca3af; }
+.summary-value  { font-size: 0.95rem; font-weight: 700; color: #111827; }
+.summary-sep    { color: #9ca3af; font-size: 1.1rem; }
+.summary-total  { font-size: 0.72rem; color: #6b7280; white-space: nowrap; }
+
+.event-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.event-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 0.76rem;
+}
+.event-depart  { background: #eff6ff; }
+.event-arrive  { background: #f0fdf4; }
+.event-gap     { background: #fefce8; }
+.event-transit { background: #f5f3ff; }
+
+.event-icon { font-size: 0.8rem; flex-shrink: 0; }
+.event-time { font-weight: 600; color: #374151; flex-shrink: 0; width: 34px; }
+.event-desc { flex: 1; color: #4b5563; }
+.event-dur  { font-size: 0.68rem; color: #9ca3af; flex-shrink: 0; }
+
+/* ── Row label editing in Gantt ───────────────────────── */
+.gantt-label-col-source {
+  position: relative;
+}
+.gantt-label.gantt-label-editable {
+  cursor: pointer;
+}
+.gantt-label.gantt-label-editable:hover {
+  color: #667eea;
+  text-decoration: underline dotted;
+}
+.row-type-emoji {
+  margin-right: 4px;
+  font-size: 0.85rem;
+}
+/* Inline edit input for plan name in plan lane */
+.gantt-plan-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 5px;
+  border: 1px solid #667eea;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #374151;
+  background: #fff;
+  outline: none;
+}
+
+.gantt-row-label-input {
+  width: 100%;
+  padding: 2px 5px;
+  border: 1px solid #667eea;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #374151;
+  background: #fff;
+  outline: none;
+}
+.row-del-btn {
+  opacity: 0;
+  transition: opacity 0.1s;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.gantt-label-col-source:hover .row-del-btn { opacity: 1; }
+
+/* Add row button row */
+.gantt-add-row {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  border-bottom: 1px dashed #e0e2ee;
+  cursor: pointer;
+}
+.gantt-add-row:hover .gantt-add-row-label { color: #667eea; }
+.gantt-add-row-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #b0b7c8;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+/* Error state for text inputs */
+.input-error {
+  border-color: #ef4444 !important;
+  background: #fff5f5 !important;
+  color: #dc2626 !important;
+}
+.input-error:focus {
+  outline-color: #ef4444 !important;
+}
+
+/* ── Empty / misc ─────────────────────────────────────── */
+.empty-hint {
+  color: #b0b7c8;
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  line-height: 1.5;
+}
+.empty-hint.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}

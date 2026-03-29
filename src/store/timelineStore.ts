@@ -1,0 +1,425 @@
+/**
+ * 全局状态管理 - 使用 Zustand
+ * 管理班次库、时间轴和配置
+ */
+
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import dayjs from 'dayjs';
+import type { TransitOption, Timeline, AppConfig, TimelineSegment } from '../lib/models';
+import { validateConnection, calculateTotalDuration } from '../lib/validators';
+
+export interface GanttRow {
+  id: string;
+  name: string;
+}
+
+export type HistoryEntry = {
+  transits: [string, TransitOption][];
+  timelines: [string, Timeline][];
+};
+
+interface TimelineStore {
+  // 数据
+  transits: Map<string, TransitOption>;
+  timelines: Map<string, Timeline>;
+  rows: GanttRow[];
+  config: AppConfig;
+  selectedTimelineId: string | null;
+  editingTransitId: string | null;
+  formPrefill: TransitOption | null;
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+
+  // 班次管理
+  addTransit: (transit: TransitOption) => void;
+  updateTransit: (id: string, transit: Partial<TransitOption>) => void;
+  removeTransit: (id: string) => void;
+  getTransit: (id: string) => TransitOption | undefined;
+
+  // 行程段行管理
+  addRow: (name: string) => string;
+  updateRow: (rowId: string, name: string) => void;
+  removeRow: (rowId: string) => void;
+  getAllRows: () => GanttRow[];
+
+  // 时间轴管理
+  createTimeline: (name: string) => string;
+  deleteTimeline: (id: string) => void;
+  renameTimeline: (id: string, name: string) => void;
+  addSegmentToTimeline: (timelineId: string, transitId: string) => boolean;
+  removeSegmentFromTimeline: (timelineId: string, order: number) => void;
+  reorderSegments: (timelineId: string, fromOrder: number, toOrder: number) => void;
+  getTimeline: (id: string) => Timeline | undefined;
+  selectTimeline: (id: string | null) => void;
+  setEditingTransitId: (id: string | null) => void;
+  setFormPrefill: (t: TransitOption | null) => void;
+
+  // 撤销/恢复
+  undo: () => void;
+  redo: () => void;
+  pushHistoryEntry: (entry: HistoryEntry) => void;
+
+  // 配置
+  updateConfig: (config: Partial<AppConfig>) => void;
+
+  // 工具函数
+  getAllTimelines: () => Timeline[];
+  getAllTransits: () => TransitOption[];
+}
+
+const DEFAULT_CONFIG: AppConfig = {
+  defaultBufferTime: 10,
+  bufferByTransitType: {
+    'flight-to-bus': 30,
+    'flight-to-train': 45,
+    'flight-to-shuttle': 20,
+    'bus-to-train': 20,
+    'bus-to-flight': 30,
+    'train-to-bus': 15,
+    'train-to-flight': 30,
+    'shuttle-to-bus': 10,
+    'shuttle-to-train': 10,
+  },
+  timezone: 'Asia/Shanghai',
+};
+
+function revalidateTimelineSegments(
+  timeline: Timeline,
+  transitMap: Map<string, TransitOption>,
+  bufferConfig: Record<string, number>
+): Timeline {
+  if (timeline.segments.length === 0) return timeline;
+
+  const sorted = [...timeline.segments].sort((a, b) => {
+    const tA = transitMap.get(a.transitId);
+    const tB = transitMap.get(b.transitId);
+    if (!tA || !tB) return 0;
+    return dayjs(tA.departureTime).diff(dayjs(tB.departureTime));
+  });
+
+  const validated: TimelineSegment[] = sorted.map((seg, i) => {
+    if (i === 0) return { ...seg, order: 0, validConnection: true };
+    const prevT = transitMap.get(sorted[i - 1].transitId);
+    const currT = transitMap.get(seg.transitId);
+    if (!prevT || !currT) return { ...seg, order: i, validConnection: false };
+    const result = validateConnection(prevT, currT, bufferConfig);
+    return { ...seg, order: i, validConnection: result.isValid };
+  });
+
+  return {
+    ...timeline,
+    segments: validated,
+    isValid: validated.every(s => s.validConnection),
+    totalDuration: calculateTotalDuration(validated, transitMap),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export const useTimelineStore = create<TimelineStore>()(
+  persist(
+    (set, get) => {
+      /** Save current transits+timelines to undo stack */
+      const pushHistory = () => {
+        const s = get();
+        const entry: HistoryEntry = {
+          transits: Array.from(s.transits.entries()),
+          timelines: Array.from(s.timelines.entries()),
+        };
+        set(st => ({ past: [...st.past.slice(-49), entry], future: [] }));
+      };
+
+      /** Find a transit that differs between two maps (for form prefill) */
+      const diffTransit = (
+        fromMap: Map<string, TransitOption>,
+        toMap: Map<string, TransitOption>
+      ): TransitOption | null => {
+        // Transit in 'from' but not in 'to' → was removed
+        for (const [id, t] of fromMap) {
+          if (!toMap.has(id)) return t;
+        }
+        // Transit in 'to' but not in 'from' → was added (return it so form can pre-fill)
+        for (const [id, t] of toMap) {
+          if (!fromMap.has(id)) return t;
+        }
+        return null;
+      };
+
+      return {
+        transits: new Map(),
+        timelines: new Map(),
+        rows: [],
+        config: DEFAULT_CONFIG,
+        selectedTimelineId: null,
+        editingTransitId: null,
+        formPrefill: null,
+        past: [],
+        future: [],
+
+        // 行程段行管理
+        addRow: (name: string) => {
+          const id = `row-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+          set(state => ({ rows: [...state.rows, { id, name }] }));
+          return id;
+        },
+
+        updateRow: (rowId: string, name: string) => {
+          set(state => ({ rows: state.rows.map(r => r.id === rowId ? { ...r, name } : r) }));
+        },
+
+        removeRow: (rowId: string) => {
+          set(state => {
+            const newTransits = new Map(state.transits);
+            for (const [id, t] of state.transits) {
+              if (t.category === rowId) newTransits.set(id, { ...t, category: undefined });
+            }
+            return { rows: state.rows.filter(r => r.id !== rowId), transits: newTransits };
+          });
+        },
+
+        getAllRows: () => get().rows,
+
+        // 班次管理
+        addTransit: (transit: TransitOption) => {
+          pushHistory();
+          set((state) => {
+            const newTransits = new Map(state.transits);
+            newTransits.set(transit.id, transit);
+            return { transits: newTransits };
+          });
+        },
+
+        updateTransit: (id: string, updates: Partial<TransitOption>) => {
+          set((state) => {
+            const transit = state.transits.get(id);
+            if (!transit) return state;
+
+            const updatedTransit = { ...transit, ...updates };
+            const newTransits = new Map(state.transits);
+            newTransits.set(id, updatedTransit);
+
+            const newTimelines = new Map(state.timelines);
+            for (const [tid, timeline] of state.timelines) {
+              if (!timeline.segments.some(s => s.transitId === id)) continue;
+              newTimelines.set(tid, revalidateTimelineSegments(
+                timeline, newTransits, state.config.bufferByTransitType
+              ));
+            }
+
+            return { transits: newTransits, timelines: newTimelines };
+          });
+        },
+
+        removeTransit: (id: string) => {
+          pushHistory();
+          set((state) => {
+            const newTransits = new Map(state.transits);
+            newTransits.delete(id);
+
+            const newTimelines = new Map(state.timelines);
+            for (const [timelineId, timeline] of newTimelines) {
+              const newSegments = timeline.segments.filter(seg => seg.transitId !== id);
+              newTimelines.set(timelineId, { ...timeline, segments: newSegments });
+            }
+
+            return { transits: newTransits, timelines: newTimelines };
+          });
+        },
+
+        getTransit: (id: string) => get().transits.get(id),
+
+        // 时间轴管理
+        createTimeline: (name: string) => {
+          const id = `timeline-${Date.now()}`;
+          const timeline: Timeline = {
+            id, name, segments: [], isValid: true, totalDuration: 0,
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+          };
+          set((state) => {
+            const newTimelines = new Map(state.timelines);
+            newTimelines.set(id, timeline);
+            return { timelines: newTimelines, selectedTimelineId: id };
+          });
+          return id;
+        },
+
+        deleteTimeline: (id: string) => {
+          set((state) => {
+            const newTimelines = new Map(state.timelines);
+            newTimelines.delete(id);
+            const selectedId = state.selectedTimelineId === id ? null : state.selectedTimelineId;
+            return { timelines: newTimelines, selectedTimelineId: selectedId };
+          });
+        },
+
+        renameTimeline: (id: string, name: string) => {
+          set((state) => {
+            const tl = state.timelines.get(id);
+            if (!tl) return state;
+            const newTimelines = new Map(state.timelines);
+            newTimelines.set(id, { ...tl, name, updatedAt: new Date().toISOString() });
+            return { timelines: newTimelines };
+          });
+        },
+
+        addSegmentToTimeline: (timelineId: string, transitId: string) => {
+          const state = get();
+          const timeline = state.getTimeline(timelineId);
+          if (!timeline) return false;
+          if (timeline.segments.some(seg => seg.transitId === transitId)) return false;
+
+          pushHistory();
+          const newSegment: TimelineSegment = {
+            transitId, order: timeline.segments.length, validConnection: true, gaps: undefined,
+          };
+
+          set((st) => {
+            const newTimelines = new Map(st.timelines);
+            const updated = { ...timeline, segments: [...timeline.segments, newSegment] };
+            const revalidated = revalidateTimelineSegments(updated, st.transits, st.config.bufferByTransitType);
+            newTimelines.set(timelineId, revalidated);
+            return { timelines: newTimelines };
+          });
+
+          return true;
+        },
+
+        removeSegmentFromTimeline: (timelineId: string, order: number) => {
+          const timeline = get().getTimeline(timelineId);
+          if (!timeline) return;
+
+          pushHistory();
+          set((state) => {
+            const newTimelines = new Map(state.timelines);
+            const filtered = timeline.segments
+              .filter((seg) => seg.order !== order)
+              .map((seg, idx) => ({ ...seg, order: idx }));
+            const updated = { ...timeline, segments: filtered };
+            const revalidated = revalidateTimelineSegments(updated, state.transits, state.config.bufferByTransitType);
+            newTimelines.set(timelineId, revalidated);
+            return { timelines: newTimelines };
+          });
+        },
+
+        reorderSegments: (timelineId: string, fromOrder: number, toOrder: number) => {
+          const timeline = get().getTimeline(timelineId);
+          if (!timeline) return;
+
+          const newSegments = [...timeline.segments];
+          const [movedSegment] = newSegments.splice(fromOrder, 1);
+          newSegments.splice(toOrder, 0, movedSegment);
+
+          set((state) => {
+            const newTimelines = new Map(state.timelines);
+            const updated = {
+              ...timeline,
+              segments: newSegments.map((seg, idx) => ({ ...seg, order: idx })),
+            };
+            const revalidated = revalidateTimelineSegments(updated, state.transits, state.config.bufferByTransitType);
+            newTimelines.set(timelineId, revalidated);
+            return { timelines: newTimelines };
+          });
+        },
+
+        getTimeline: (id: string) => get().timelines.get(id),
+
+        selectTimeline: (id: string | null) => {
+          set({ selectedTimelineId: id });
+        },
+
+        setEditingTransitId: (id: string | null) => {
+          set({ editingTransitId: id });
+        },
+
+        setFormPrefill: (t: TransitOption | null) => {
+          set({ formPrefill: t });
+        },
+
+        // 撤销/恢复
+        undo: () => {
+          const state = get();
+          if (state.past.length === 0) return;
+          const prev = state.past[state.past.length - 1];
+          const current: HistoryEntry = {
+            transits: Array.from(state.transits.entries()),
+            timelines: Array.from(state.timelines.entries()),
+          };
+          const prevMap = new Map(prev.transits);
+          const prefill = diffTransit(state.transits, prevMap);
+          set({
+            past: state.past.slice(0, -1),
+            future: [current, ...state.future.slice(0, 49)],
+            transits: new Map(prev.transits),
+            timelines: new Map(prev.timelines),
+            formPrefill: prefill,
+          });
+        },
+
+        redo: () => {
+          const state = get();
+          if (state.future.length === 0) return;
+          const next = state.future[0];
+          const current: HistoryEntry = {
+            transits: Array.from(state.transits.entries()),
+            timelines: Array.from(state.timelines.entries()),
+          };
+          const nextMap = new Map(next.transits);
+          const prefill = diffTransit(state.transits, nextMap);
+          set({
+            past: [...state.past.slice(-49), current],
+            future: state.future.slice(1),
+            transits: new Map(next.transits),
+            timelines: new Map(next.timelines),
+            formPrefill: prefill,
+          });
+        },
+
+        pushHistoryEntry: (entry: HistoryEntry) => {
+          set(st => ({ past: [...st.past.slice(-49), entry], future: [] }));
+        },
+
+        // 配置
+        updateConfig: (config: Partial<AppConfig>) => {
+          set((state) => ({ config: { ...state.config, ...config } }));
+        },
+
+        // 工具函数
+        getAllTimelines: () => Array.from(get().timelines.values()),
+        getAllTransits: () => Array.from(get().transits.values()),
+      };
+    },
+    {
+      name: 'itinerary-scheduler-v1',
+      partialize: (state) => ({
+        transits: Array.from(state.transits.entries()),
+        timelines: Array.from(state.timelines.entries()),
+        rows: state.rows,
+        config: state.config,
+      }),
+      merge: (persisted, current) => {
+        const p = persisted as {
+          transits: [string, TransitOption][];
+          timelines: [string, Timeline][];
+          rows: typeof current.rows;
+          config: AppConfig;
+        };
+        const transitMap = new Map<string, TransitOption>(p.transits ?? []);
+        const config = p.config ?? current.config;
+        // Re-validate all timelines on load to clear any stale isValid state
+        const timelinesMap = new Map<string, Timeline>(
+          (p.timelines ?? []).map(([id, tl]: [string, Timeline]) => [
+            id,
+            revalidateTimelineSegments(tl, transitMap, config.bufferByTransitType ?? {}),
+          ])
+        );
+        return {
+          ...current,
+          transits: transitMap,
+          timelines: timelinesMap,
+          rows: p.rows ?? [],
+          config,
+        };
+      },
+    }
+  )
+);
