@@ -797,13 +797,6 @@
   cursor: grab;
   z-index: 1;
 }
-.gantt-block.plan-event-block.compact {
-  padding: 0;
-}
-.gantt-block.plan-event-block.compact .block-name,
-.gantt-block.plan-event-block.compact .block-time {
-  display: none;
-}
 .gantt-block.plan-event-block:hover {
   background: rgba(156, 163, 175, 0.35);
 }
@@ -874,69 +867,71 @@
 }
 
 /* ── Event items in ItineraryPreview ─────────────────── */
-.plan-event-preview-row {
-  display: flex;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 6px 4px 18px;
-  border-radius: 4px;
+.plan-event-preview-card {
+  margin: 4px 0 4px 2px;
+  padding: 6px 8px 7px 10px;
+  border-radius: 8px;
   font-size: 0.73rem;
   background: #f9fafb;
-  border-left: 2px solid #d1d5db;
-  margin: 2px 0 2px 2px;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #d1d5db;
+}
+.plan-event-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .plan-event-pin { font-size: 0.68rem; flex-shrink: 0; }
 .plan-event-label-input {
-  flex: 1 1 110px;
-  min-width: 110px;
-  padding: 1px 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
   border: 1px solid #d1d5db;
-  border-radius: 3px;
+  border-radius: 5px;
   font-size: 0.73rem;
   color: #374151;
   background: #fff;
   outline: none;
 }
+.plan-event-preview-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+.plan-event-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.65rem;
+  color: #6b7280;
+}
 .plan-event-time-input {
-  width: 54px;
-  padding: 1px 4px;
-  border: 1px solid #d1d5db;
-  border-radius: 3px;
-  font-size: 0.73rem;
-  color: #374151;
-  background: #fff;
-  flex-shrink: 0;
-}
-.plan-event-time-sep {
-  color: #9ca3af;
-  line-height: 1.8;
-  flex-shrink: 0;
-}
-.plan-event-notes-input {
   width: 100%;
-  margin-top: 2px;
   padding: 3px 6px;
   border: 1px solid #d1d5db;
-  border-radius: 4px;
+  border-radius: 5px;
   font-size: 0.72rem;
   color: #374151;
   background: #fff;
-  resize: none;
-  min-height: 44px;
-  max-height: 44px;
-  overflow-y: auto;
+}
+.plan-event-notes-input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  color: #374151;
+  background: #fff;
+  resize: vertical;
+  min-height: 52px;
   font-family: inherit;
 }
-.plan-event-notes-input.inline {
-  flex-basis: 100%;
-}
 .plan-event-error {
-  width: 100%;
-  margin-top: 1px;
+  margin-top: 5px;
   font-size: 0.66rem;
   color: #dc2626;
-  padding-left: 18px;
 }
 .gap-add-btn {
   background: none;

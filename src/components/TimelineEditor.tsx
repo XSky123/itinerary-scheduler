@@ -256,7 +256,7 @@ export default function TimelineEditor() {
     const slotLeftPx = ((slotStart - rangeStart.valueOf()) / totalMs) * ganttContentWidth
     const slotRightPx = ((slotEnd - rangeStart.valueOf()) / totalMs) * ganttContentWidth
     const slotWidthPx = Math.max(0, slotRightPx - slotLeftPx)
-    const visualWidthPx = Math.max(1, Math.min(Math.max(rawWidthPx, Math.min(MIN_EVENT_VISIBLE_PX, slotWidthPx)), slotWidthPx))
+    const visualWidthPx = Math.min(Math.max(rawWidthPx, MIN_EVENT_VISIBLE_PX), Math.max(MIN_EVENT_VISIBLE_PX, slotWidthPx))
     const visualLeftPx = clamp(rawLeftPx, slotLeftPx, Math.max(slotLeftPx, slotRightPx - visualWidthPx))
 
     return {
@@ -468,7 +468,7 @@ export default function TimelineEditor() {
         // Render individually
         return gapEvents.map(ev => (
           <div key={ev.id}
-            className={`gantt-block plan-event-block${(((dayjs(ev.endTime).valueOf() - dayjs(ev.startTime).valueOf()) / totalMs) * ganttContentWidth) >= 36 ? '' : ' compact'}`}
+            className="gantt-block plan-event-block"
             style={getEventVisualStyle(
               dayjs(ev.startTime).valueOf(),
               dayjs(ev.endTime).valueOf(),
@@ -481,7 +481,7 @@ export default function TimelineEditor() {
           >
             <div className="resize-handle resize-l" onMouseDown={e => { e.stopPropagation(); startEventDrag(e, ev, 'resize-l') }} />
             <div className="resize-handle resize-r" onMouseDown={e => { e.stopPropagation(); startEventDrag(e, ev, 'resize-r') }} />
-            {(((dayjs(ev.endTime).valueOf() - dayjs(ev.startTime).valueOf()) / totalMs) * ganttContentWidth) >= 36 && <div className="block-name">{ev.label}</div>}
+            <div className="block-name">{ev.label}</div>
             <div className="block-time">{dayjs(ev.startTime).format('HH:mm')}–{dayjs(ev.endTime).format('HH:mm')}</div>
           </div>
         ))

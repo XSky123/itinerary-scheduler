@@ -11,40 +11,11 @@ const EVENT_ICONS: Record<string, string> = {
   gap: 'G',
 }
 
-const MAX_EVENT_NOTES_LENGTH = 120
-
 type EventDraft = {
   label: string
   start: string
   end: string
   notes: string
-}
-
-function normalizeTimeInput(raw: string): string {
-  return raw.replace(/：/g, ':').trim()
-}
-
-function parseTimeStr(raw: string): string | null {
-  const s = normalizeTimeInput(raw)
-  const m1 = s.match(/^(\d{1,2}):(\d{2})$/)
-  if (m1) {
-    const h = +m1[1]
-    const mm = +m1[2]
-    if (h <= 23 && mm <= 59) return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-  }
-  const m2 = s.match(/^(\d{3,4})$/)
-  if (m2) {
-    const p = m2[0].padStart(4, '0')
-    const h = +p.slice(0, 2)
-    const mm = +p.slice(2)
-    if (h <= 23 && mm <= 59) return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-  }
-  const m3 = s.match(/^(\d{1,2})$/)
-  if (m3) {
-    const h = +m3[1]
-    if (h <= 23) return `${String(h).padStart(2, '0')}:00`
-  }
-  return null
 }
 
 function downloadCSV(content: string, filename: string) {
@@ -74,7 +45,7 @@ export default function ItineraryPreview() {
   } = useTimelineStore()
 
   const [eventDrafts, setEventDrafts] = useState<Record<string, EventDraft>>({})
-  const [eventErrors, setEventErrors] = useState<Record<string, { start: boolean; end: boolean; message?: string }>>({})
+  const [eventErrors, setEventErrors] = useState<Record<string, string>>({})
 
   const timelines = getAllTimelines()
   const transitMap = new Map(getAllTransits().map(t => [t.id, t]))
@@ -110,78 +81,49 @@ export default function ItineraryPreview() {
     const base = getEventDraft(ev)
     setEventDrafts(prev => ({
       ...prev,
-      [ev.id]: {
-        ...base,
-        [field]: field === 'notes' ? value.slice(0, MAX_EVENT_NOTES_LENGTH) : value,
-      },
+      [ev.id]: { ...base, [field]: value },
     }))
   }
 
   const validateEventDraft = (gapEvent: ItineraryEvent, ev: PlanEventBlock, draft: EventDraft) => {
-    if (!activeTimeline || gapEvent.type !== 'gap' || gapEvent.duration === undefined) {
-      return { start: false, end: false, message: '当前事项暂时无法校验' }
-    }
-
-    const normalizedStart = parseTimeStr(draft.start)
-    const normalizedEnd = parseTimeStr(draft.end)
-    if (!normalizedStart || !normalizedEnd) {
-      return { start: !normalizedStart, end: !normalizedEnd, message: '请输入正确的时间，支持 08:00 / 800 / 8' }
-    }
+    if (!activeTimeline || gapEvent.type !== 'gap' || gapEvent.duration === undefined) return '当前事项暂时无法校验'
 
     const day = dayjs(gapEvent.time).format('YYYY-MM-DD')
-    const start = dayjs(`${day}T${normalizedStart}`)
-    const end = dayjs(`${day}T${normalizedEnd}`)
+    const start = dayjs(`${day}T${draft.start}`)
+    const end = dayjs(`${day}T${draft.end}`)
     const gapStart = dayjs(gapEvent.time)
     const gapEnd = gapStart.add(gapEvent.duration, 'minute')
 
-    if (!end.isAfter(start)) {
-      return { start: false, end: true, message: '结束时间需要晚于开始时间' }
-    }
-    if (start.isBefore(gapStart) || end.isAfter(gapEnd)) {
-      return { start: true, end: true, message: '事项时间不能超出当前间隙' }
-    }
+    if (!start.isValid() || !end.isValid()) return '请输入正确的起止时间'
+    if (!end.isAfter(start)) return '结束时间需要晚于开始时间'
+    if (start.isBefore(gapStart) || end.isAfter(gapEnd)) return '事项时间不能超出当前间隙'
 
     const overlaps = getEventsInGap(gapEvent)
       .filter(item => item.id !== ev.id)
       .some(item => start.isBefore(dayjs(item.endTime)) && end.isAfter(dayjs(item.startTime)))
 
-    if (overlaps) {
-      return { start: true, end: true, message: '事项时间不能与其他事项重叠' }
-    }
-
-    return { start: false, end: false }
+    if (overlaps) return '事项时间不能与其他事项重叠'
+    return null
   }
 
   const commitEventDraft = (gapEvent: ItineraryEvent, ev: PlanEventBlock) => {
     const draft = getEventDraft(ev)
-    const result = validateEventDraft(gapEvent, ev, draft)
-    if (result.message) {
-      setEventErrors(prev => ({ ...prev, [ev.id]: result }))
+    const error = validateEventDraft(gapEvent, ev, draft)
+    if (error) {
+      setEventErrors(prev => ({ ...prev, [ev.id]: error }))
       return
     }
 
-    const normalizedStart = parseTimeStr(draft.start)!
-    const normalizedEnd = parseTimeStr(draft.end)!
     const day = dayjs(gapEvent.time).format('YYYY-MM-DD')
-
-    setEventDrafts(prev => ({
-      ...prev,
-      [ev.id]: {
-        ...draft,
-        start: normalizedStart,
-        end: normalizedEnd,
-      },
-    }))
     setEventErrors(prev => {
       const next = { ...prev }
       delete next[ev.id]
       return next
     })
-
     updatePlanEvent(ev.id, {
       label: draft.label.trim() || '事项',
-      startTime: dayjs(`${day}T${normalizedStart}`).toISOString(),
-      endTime: dayjs(`${day}T${normalizedEnd}`).toISOString(),
+      startTime: dayjs(`${day}T${draft.start}`).toISOString(),
+      endTime: dayjs(`${day}T${draft.end}`).toISOString(),
       notes: draft.notes.trim() || undefined,
     })
   }
@@ -279,47 +221,57 @@ export default function ItineraryPreview() {
                         const draft = getEventDraft(ev)
                         const error = eventErrors[ev.id]
                         return (
-                          <div key={ev.id} className="plan-event-preview-row">
-                            <span className="plan-event-pin">#</span>
-                            <input
-                              className="plan-event-label-input"
-                              value={draft.label}
-                              onChange={e => setEventDraftField(ev, 'label', e.target.value)}
-                              onBlur={() => commitEventDraft(event, ev)}
-                              placeholder="事项标题"
-                            />
-                            <input
-                              type="text"
-                              className={`plan-event-time-input${error?.start ? ' input-error' : ''}`}
-                              value={draft.start}
-                              onChange={e => setEventDraftField(ev, 'start', e.target.value)}
-                              onBlur={() => commitEventDraft(event, ev)}
-                              placeholder="08:00"
-                            />
-                            <span className="plan-event-time-sep">-</span>
-                            <input
-                              type="text"
-                              className={`plan-event-time-input${error?.end ? ' input-error' : ''}`}
-                              value={draft.end}
-                              onChange={e => setEventDraftField(ev, 'end', e.target.value)}
-                              onBlur={() => commitEventDraft(event, ev)}
-                              placeholder="10:00"
-                            />
-                            <button
-                              className="btn-icon"
-                              onClick={() => removePlanEvent(ev.id)}
-                              title="删除"
-                              style={{ marginLeft: 'auto', flexShrink: 0 }}
-                            >×</button>
+                          <div key={ev.id} className="plan-event-preview-card">
+                            <div className="plan-event-preview-head">
+                              <span className="plan-event-pin">#</span>
+                              <input
+                                className="plan-event-label-input"
+                                value={draft.label}
+                                onChange={e => setEventDraftField(ev, 'label', e.target.value)}
+                                onBlur={() => commitEventDraft(event, ev)}
+                                placeholder="事项标题"
+                              />
+                              <button
+                                className="btn-icon"
+                                onClick={() => removePlanEvent(ev.id)}
+                                title="删除"
+                                style={{ marginLeft: 'auto', flexShrink: 0 }}
+                              >×</button>
+                            </div>
+
+                            <div className="plan-event-preview-fields">
+                              <label className="plan-event-field">
+                                <span>开始</span>
+                                <input
+                                  type="time"
+                                  className={`plan-event-time-input${error ? ' input-error' : ''}`}
+                                  value={draft.start}
+                                  onChange={e => setEventDraftField(ev, 'start', e.target.value)}
+                                  onBlur={() => commitEventDraft(event, ev)}
+                                />
+                              </label>
+                              <label className="plan-event-field">
+                                <span>结束</span>
+                                <input
+                                  type="time"
+                                  className={`plan-event-time-input${error ? ' input-error' : ''}`}
+                                  value={draft.end}
+                                  onChange={e => setEventDraftField(ev, 'end', e.target.value)}
+                                  onBlur={() => commitEventDraft(event, ev)}
+                                />
+                              </label>
+                            </div>
+
                             <textarea
-                              className="plan-event-notes-input inline"
+                              className="plan-event-notes-input"
                               value={draft.notes}
                               onChange={e => setEventDraftField(ev, 'notes', e.target.value)}
                               onBlur={() => commitEventDraft(event, ev)}
                               placeholder="备注（可选）"
                               rows={2}
                             />
-                            {error?.message && <div className="plan-event-error">{error.message}</div>}
+
+                            {error && <div className="plan-event-error">{error}</div>}
                           </div>
                         )
                       })}
