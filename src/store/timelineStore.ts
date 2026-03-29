@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import dayjs from 'dayjs';
-import type { TransitOption, Timeline, AppConfig, TimelineSegment } from '../lib/models';
+import type { TransitOption, Timeline, AppConfig, TimelineSegment, PlanEventBlock } from '../lib/models';
 import { validateConnection, calculateTotalDuration } from '../lib/validators';
 
 export interface GanttRow {
@@ -23,6 +23,7 @@ interface TimelineStore {
   // 数据
   transits: Map<string, TransitOption>;
   timelines: Map<string, Timeline>;
+  planEvents: Map<string, PlanEventBlock>;
   rows: GanttRow[];
   config: AppConfig;
   selectedTimelineId: string | null;
@@ -59,6 +60,12 @@ interface TimelineStore {
   undo: () => void;
   redo: () => void;
   pushHistoryEntry: (entry: HistoryEntry) => void;
+
+  // 计划事项块
+  addPlanEvent: (ev: PlanEventBlock) => void;
+  updatePlanEvent: (id: string, updates: Partial<Omit<PlanEventBlock, 'id' | 'timelineId'>>) => void;
+  removePlanEvent: (id: string) => void;
+  getPlanEventsByTimeline: (timelineId: string) => PlanEventBlock[];
 
   // 配置
   updateConfig: (config: Partial<AppConfig>) => void;
@@ -148,6 +155,7 @@ export const useTimelineStore = create<TimelineStore>()(
       return {
         transits: new Map(),
         timelines: new Map(),
+        planEvents: new Map(),
         rows: [],
         config: DEFAULT_CONFIG,
         selectedTimelineId: null,
@@ -383,6 +391,24 @@ export const useTimelineStore = create<TimelineStore>()(
           set((state) => ({ config: { ...state.config, ...config } }));
         },
 
+        // 计划事项块
+        addPlanEvent: (ev: PlanEventBlock) => {
+          set(state => { const m = new Map(state.planEvents); m.set(ev.id, ev); return { planEvents: m } });
+        },
+        updatePlanEvent: (id: string, updates) => {
+          set(state => {
+            const ev = state.planEvents.get(id); if (!ev) return state;
+            const m = new Map(state.planEvents); m.set(id, { ...ev, ...updates }); return { planEvents: m };
+          });
+        },
+        removePlanEvent: (id: string) => {
+          set(state => { const m = new Map(state.planEvents); m.delete(id); return { planEvents: m } });
+        },
+        getPlanEventsByTimeline: (timelineId: string) =>
+          Array.from(get().planEvents.values())
+            .filter(ev => ev.timelineId === timelineId)
+            .sort((a, b) => dayjs(a.startTime).diff(dayjs(b.startTime))),
+
         // 工具函数
         getAllTimelines: () => Array.from(get().timelines.values()),
         getAllTransits: () => Array.from(get().transits.values()),
@@ -393,6 +419,7 @@ export const useTimelineStore = create<TimelineStore>()(
       partialize: (state) => ({
         transits: Array.from(state.transits.entries()),
         timelines: Array.from(state.timelines.entries()),
+        planEvents: Array.from(state.planEvents.entries()),
         rows: state.rows,
         config: state.config,
       }),
@@ -400,6 +427,7 @@ export const useTimelineStore = create<TimelineStore>()(
         const p = persisted as {
           transits: [string, TransitOption][];
           timelines: [string, Timeline][];
+          planEvents?: [string, PlanEventBlock][];
           rows: typeof current.rows;
           config: AppConfig;
         };
@@ -416,6 +444,7 @@ export const useTimelineStore = create<TimelineStore>()(
           ...current,
           transits: transitMap,
           timelines: timelinesMap,
+          planEvents: new Map<string, PlanEventBlock>(p.planEvents ?? []),
           rows: p.rows ?? [],
           config,
         };

@@ -1,2 +1,3 @@
-export const APP_VERSION = 'v1.0.0'
-export const BUILD_DATE = '2026-03-29'
+declare const __BUILD_TIME__: string
+export const APP_VERSION = 'v1.1.0'
+export const BUILD_DATETIME: string = __BUILD_TIME__

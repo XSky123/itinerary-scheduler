@@ -80,6 +80,17 @@ export interface ConstraintValidationResult {
 }
 
 /**
+ * 计划事项块 - 用户在最终方案间隙中添加的自定义事项
+ */
+export interface PlanEventBlock {
+  id: string;
+  timelineId: string;
+  startTime: string;   // ISO8601
+  endTime: string;     // ISO8601
+  label: string;
+}
+
+/**
  * 应用配置
  */
 export interface AppConfig {

@@ -787,6 +787,148 @@
   outline-color: #ef4444 !important;
 }
 
+/* ── Plan event blocks (gray, in plan lane) ──────────── */
+.gantt-block.plan-event-block {
+  background: rgba(156, 163, 175, 0.20);
+  border-color: rgba(107, 114, 128, 0.55);
+  border-style: dotted;
+  color: #4b5563;
+  min-width: 44px;
+  cursor: grab;
+}
+.gantt-block.plan-event-block:hover {
+  background: rgba(156, 163, 175, 0.35);
+}
+
+/* Collapsed multi-event group block */
+.gantt-block.plan-event-group {
+  background: rgba(100, 110, 140, 0.16);
+  border-color: rgba(100, 110, 140, 0.5);
+  border-style: dashed;
+  color: #4b5563;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+/* Expanded group: parent container */
+.gantt-block.plan-event-group.expanded {
+  cursor: default;
+  align-items: flex-start;
+  background: rgba(100, 110, 140, 0.08);
+  border-style: dashed;
+  overflow: visible;
+  z-index: 5;
+  padding: 2px 4px;
+}
+.event-group-expand {
+  font-size: 0.75rem;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+.group-collapse-btn {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  background: none;
+  border: none;
+  font-size: 0.72rem;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  z-index: 1;
+}
+.group-collapse-btn:hover { color: #374151; }
+
+/* Child event blocks inside expanded group */
+.gantt-block.plan-event-child {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 22px;
+  top: auto;
+  bottom: auto;
+  background: rgba(156, 163, 175, 0.35);
+  border: 1px dotted rgba(107, 114, 128, 0.6);
+  border-radius: 4px;
+  color: #374151;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: grab;
+}
+
+/* ── Event items in ItineraryPreview ─────────────────── */
+.plan-event-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 18px;
+  border-radius: 4px;
+  font-size: 0.73rem;
+  background: #f9fafb;
+  border-left: 2px solid #d1d5db;
+  margin: 1px 0 1px 2px;
+}
+.plan-event-pin { font-size: 0.68rem; flex-shrink: 0; }
+.plan-event-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  color: #374151;
+}
+.plan-event-label:hover { color: #667eea; text-decoration: underline dotted; }
+.plan-event-label-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid #667eea;
+  border-radius: 3px;
+  font-size: 0.73rem;
+  color: #374151;
+  background: #fff;
+  outline: none;
+}
+.plan-event-time-range {
+  font-size: 0.64rem;
+  color: #9ca3af;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.gap-add-btn {
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #9ca3af;
+  font-size: 0.78rem;
+  padding: 0 5px;
+  cursor: pointer;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.gap-add-btn:hover { color: #667eea; border-color: #667eea; background: #eef0ff; }
+.gap-quota {
+  font-size: 0.66rem;
+  color: #b0b7c8;
+  flex-shrink: 0;
+}
+.gap-remain-hint {
+  font-size: 0.64rem;
+  color: #b0b7c8;
+  padding: 1px 6px 3px 22px;
+  font-style: italic;
+}
+
 /* ── Empty / misc ─────────────────────────────────────── */
 .empty-hint {
   color: #b0b7c8;
