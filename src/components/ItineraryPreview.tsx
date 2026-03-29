@@ -5,17 +5,26 @@ import { generateItinerary, formatTime, formatDuration, exportAsCSV } from '../l
 import type { Timeline, ItineraryEvent, PlanEventBlock } from '../lib/models'
 
 const EVENT_ICONS: Record<string, string> = {
-  depart: '🚀',
-  arrive: '📍',
-  transit: '🔄',
-  gap: '⏱',
+  depart: 'D',
+  arrive: 'A',
+  transit: 'T',
+  gap: 'G',
+}
+
+type EventDraft = {
+  label: string
+  start: string
+  end: string
+  notes: string
 }
 
 function downloadCSV(content: string, filename: string) {
   const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url; a.download = filename; a.click()
+  a.href = url
+  a.download = filename
+  a.click()
   URL.revokeObjectURL(url)
 }
 
@@ -35,8 +44,8 @@ export default function ItineraryPreview() {
     addPlanEvent, updatePlanEvent, removePlanEvent, getPlanEventsByTimeline,
   } = useTimelineStore()
 
-  const [editingEventId, setEditingEventId] = useState<string | null>(null)
-  const [editingLabel, setEditingLabel] = useState('')
+  const [eventDrafts, setEventDrafts] = useState<Record<string, EventDraft>>({})
+  const [eventErrors, setEventErrors] = useState<Record<string, string>>({})
 
   const timelines = getAllTimelines()
   const transitMap = new Map(getAllTransits().map(t => [t.id, t]))
@@ -50,7 +59,6 @@ export default function ItineraryPreview() {
       ? generateItinerary(sortedTimeline(activeTimeline, transitMap), transitMap)
       : null
 
-  /** Get event blocks that fall within a given gap event's time window */
   const getEventsInGap = (gapEvent: ItineraryEvent): PlanEventBlock[] => {
     if (!activeTimeline || gapEvent.type !== 'gap' || gapEvent.duration === undefined) return []
     const gapStartMs = dayjs(gapEvent.time).valueOf()
@@ -60,7 +68,66 @@ export default function ItineraryPreview() {
       .sort((a, b) => dayjs(a.startTime).diff(dayjs(b.startTime)))
   }
 
-  /** Add a new event block starting from the end of the last event in the gap */
+  const getEventDraft = (ev: PlanEventBlock): EventDraft => (
+    eventDrafts[ev.id] ?? {
+      label: ev.label,
+      start: dayjs(ev.startTime).format('HH:mm'),
+      end: dayjs(ev.endTime).format('HH:mm'),
+      notes: ev.notes ?? '',
+    }
+  )
+
+  const setEventDraftField = (ev: PlanEventBlock, field: keyof EventDraft, value: string) => {
+    const base = getEventDraft(ev)
+    setEventDrafts(prev => ({
+      ...prev,
+      [ev.id]: { ...base, [field]: value },
+    }))
+  }
+
+  const validateEventDraft = (gapEvent: ItineraryEvent, ev: PlanEventBlock, draft: EventDraft) => {
+    if (!activeTimeline || gapEvent.type !== 'gap' || gapEvent.duration === undefined) return '当前事项暂时无法校验'
+
+    const day = dayjs(gapEvent.time).format('YYYY-MM-DD')
+    const start = dayjs(`${day}T${draft.start}`)
+    const end = dayjs(`${day}T${draft.end}`)
+    const gapStart = dayjs(gapEvent.time)
+    const gapEnd = gapStart.add(gapEvent.duration, 'minute')
+
+    if (!start.isValid() || !end.isValid()) return '请输入正确的起止时间'
+    if (!end.isAfter(start)) return '结束时间需要晚于开始时间'
+    if (start.isBefore(gapStart) || end.isAfter(gapEnd)) return '事项时间不能超出当前间隙'
+
+    const overlaps = getEventsInGap(gapEvent)
+      .filter(item => item.id !== ev.id)
+      .some(item => start.isBefore(dayjs(item.endTime)) && end.isAfter(dayjs(item.startTime)))
+
+    if (overlaps) return '事项时间不能与其他事项重叠'
+    return null
+  }
+
+  const commitEventDraft = (gapEvent: ItineraryEvent, ev: PlanEventBlock) => {
+    const draft = getEventDraft(ev)
+    const error = validateEventDraft(gapEvent, ev, draft)
+    if (error) {
+      setEventErrors(prev => ({ ...prev, [ev.id]: error }))
+      return
+    }
+
+    const day = dayjs(gapEvent.time).format('YYYY-MM-DD')
+    setEventErrors(prev => {
+      const next = { ...prev }
+      delete next[ev.id]
+      return next
+    })
+    updatePlanEvent(ev.id, {
+      label: draft.label.trim() || '事项',
+      startTime: dayjs(`${day}T${draft.start}`).toISOString(),
+      endTime: dayjs(`${day}T${draft.end}`).toISOString(),
+      notes: draft.notes.trim() || undefined,
+    })
+  }
+
   const handleAddEventInGap = (gapEvent: ItineraryEvent) => {
     if (!activeTimeline || gapEvent.type !== 'gap' || gapEvent.duration === undefined) return
     const gapStartMs = dayjs(gapEvent.time).valueOf()
@@ -70,19 +137,14 @@ export default function ItineraryPreview() {
       ? dayjs(existing[existing.length - 1].endTime).valueOf()
       : gapStartMs
     if (newStartMs >= gapEndMs) return
-    const newEndMs = Math.min(newStartMs + 3_600_000, gapEndMs)
+
     addPlanEvent({
       id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       timelineId: activeTimeline.id,
       startTime: dayjs(newStartMs).toISOString(),
-      endTime: dayjs(newEndMs).toISOString(),
+      endTime: dayjs(Math.min(newStartMs + 3_600_000, gapEndMs)).toISOString(),
       label: '事项',
     })
-  }
-
-  const commitLabelEdit = (ev: PlanEventBlock) => {
-    updatePlanEvent(ev.id, { label: editingLabel.trim() || '事项' })
-    setEditingEventId(null)
   }
 
   return (
@@ -106,7 +168,7 @@ export default function ItineraryPreview() {
       )}
 
       {!activeTimeline || activeTimeline.segments.length === 0 ? (
-        <p className="empty-hint">在时刻表中点击班次块加入计划，此处自动生成行程单</p>
+        <p className="empty-hint">在时刻表中点击班次块加入计划，这里会自动生成行程。</p>
       ) : (
         <>
           {itinerary && (
@@ -150,45 +212,70 @@ export default function ItineraryPreview() {
                           <button
                             className="gap-add-btn"
                             onClick={() => handleAddEventInGap(event)}
-                            title={`添加事项（剩余 ${formatDuration(remainMinutes)}）`}
-                          >＋</button>
+                            title={`新增事项，剩余 ${formatDuration(remainMinutes)}`}
+                          >+</button>
                         )}
                       </div>
-                      {/* Event blocks inside this gap */}
-                      {gapEvents.map(ev => (
-                        <div key={ev.id} className="plan-event-preview-row">
-                          <span className="plan-event-pin">📌</span>
-                          {editingEventId === ev.id ? (
-                            <input
-                              className="plan-event-label-input"
-                              value={editingLabel}
-                              onChange={e => setEditingLabel(e.target.value)}
-                              onBlur={() => commitLabelEdit(ev)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') e.currentTarget.blur()
-                                if (e.key === 'Escape') setEditingEventId(null)
-                              }}
-                              autoFocus
+
+                      {gapEvents.map(ev => {
+                        const draft = getEventDraft(ev)
+                        const error = eventErrors[ev.id]
+                        return (
+                          <div key={ev.id} className="plan-event-preview-card">
+                            <div className="plan-event-preview-head">
+                              <span className="plan-event-pin">#</span>
+                              <input
+                                className="plan-event-label-input"
+                                value={draft.label}
+                                onChange={e => setEventDraftField(ev, 'label', e.target.value)}
+                                onBlur={() => commitEventDraft(event, ev)}
+                                placeholder="事项标题"
+                              />
+                              <button
+                                className="btn-icon"
+                                onClick={() => removePlanEvent(ev.id)}
+                                title="删除"
+                                style={{ marginLeft: 'auto', flexShrink: 0 }}
+                              >×</button>
+                            </div>
+
+                            <div className="plan-event-preview-fields">
+                              <label className="plan-event-field">
+                                <span>开始</span>
+                                <input
+                                  type="time"
+                                  className={`plan-event-time-input${error ? ' input-error' : ''}`}
+                                  value={draft.start}
+                                  onChange={e => setEventDraftField(ev, 'start', e.target.value)}
+                                  onBlur={() => commitEventDraft(event, ev)}
+                                />
+                              </label>
+                              <label className="plan-event-field">
+                                <span>结束</span>
+                                <input
+                                  type="time"
+                                  className={`plan-event-time-input${error ? ' input-error' : ''}`}
+                                  value={draft.end}
+                                  onChange={e => setEventDraftField(ev, 'end', e.target.value)}
+                                  onBlur={() => commitEventDraft(event, ev)}
+                                />
+                              </label>
+                            </div>
+
+                            <textarea
+                              className="plan-event-notes-input"
+                              value={draft.notes}
+                              onChange={e => setEventDraftField(ev, 'notes', e.target.value)}
+                              onBlur={() => commitEventDraft(event, ev)}
+                              placeholder="备注（可选）"
+                              rows={2}
                             />
-                          ) : (
-                            <span
-                              className="plan-event-label"
-                              onClick={() => { setEditingEventId(ev.id); setEditingLabel(ev.label) }}
-                              title="点击编辑"
-                            >{ev.label}</span>
-                          )}
-                          <span className="plan-event-time-range">
-                            {dayjs(ev.startTime).format('HH:mm')}–{dayjs(ev.endTime).format('HH:mm')}
-                          </span>
-                          <button
-                            className="btn-icon"
-                            onClick={() => removePlanEvent(ev.id)}
-                            title="删除"
-                            style={{ marginLeft: 'auto', flexShrink: 0 }}
-                          >×</button>
-                        </div>
-                      ))}
-                      {/* Remaining quota indicator */}
+
+                            {error && <div className="plan-event-error">{error}</div>}
+                          </div>
+                        )
+                      })}
+
                       {event.type === 'gap' && gapEvents.length > 0 && remainMinutes > 0 && (
                         <div className="gap-remain-hint">余 {formatDuration(remainMinutes)}</div>
                       )}

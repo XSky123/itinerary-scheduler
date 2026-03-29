@@ -15,8 +15,8 @@ const LABEL_COL_WIDTH = 230
 const SNAP_MS = 5 * 60 * 1000
 const DAY_START_H = 7
 const DAY_END_H = 23
-// Min px width for a gap to render event blocks inline in the Gantt
-const MIN_GAP_PX_FOR_INLINE = 44
+const MIN_GAP_PX_FOR_INLINE = 14
+const MIN_EVENT_VISIBLE_PX = 18
 
 interface DragState {
   entityId: string
@@ -41,6 +41,15 @@ interface GanttRowGroup {
   label: string
   transits: TransitOption[]
   colorIndex: number
+}
+
+interface TimeSpan {
+  start: number
+  end: number
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
 }
 
 function buildTimeRange(transits: TransitOption[]): { rangeStart: Dayjs; rangeEnd: Dayjs; totalMs: number } {
@@ -155,6 +164,14 @@ export default function TimelineEditor() {
     return getRowColor(rowIdx >= 0 ? rowIdx : -1)
   }
 
+  const getPlanTransits = (timelineId: string) => {
+    const tl = timelines.find(item => item.id === timelineId)
+    if (!tl) return []
+    return tl.segments
+      .map(s => transits.find(t => t.id === s.transitId))
+      .filter(Boolean) as TransitOption[]
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   /** Transit gaps for a plan (7:00–23:00 relative to rangeStart's day) */
   const computeTransitGaps = (planTransits: TransitOption[]) => {
@@ -195,6 +212,57 @@ export default function TimelineEditor() {
       else if (s > refTimeMs) { gapEnd = Math.min(gapEnd, s); break }
     }
     return { startMs: gapStart, endMs: Math.min(gapStart + 3_600_000, gapEnd) }
+  }
+
+  const getEventSlotBounds = (timelineId: string, eventId: string) => {
+    const currentEvent = getPlanEventsByTimeline(timelineId).find(ev => ev.id === eventId)
+    if (!currentEvent) return null
+
+    const occupied: TimeSpan[] = [
+      ...getPlanTransits(timelineId).map(t => ({
+        start: dayjs(t.departureTime).valueOf(),
+        end: dayjs(t.arrivalTime).valueOf(),
+      })),
+      ...getPlanEventsByTimeline(timelineId)
+        .filter(ev => ev.id !== eventId)
+        .map(ev => ({
+          start: dayjs(ev.startTime).valueOf(),
+          end: dayjs(ev.endTime).valueOf(),
+        })),
+    ].sort((a, b) => a.start - b.start)
+
+    const currentStart = dayjs(currentEvent.startTime).valueOf()
+    const currentEnd = dayjs(currentEvent.endTime).valueOf()
+    let minStart = rangeStart.startOf('day').add(DAY_START_H, 'hour').valueOf()
+    let maxEnd = rangeStart.startOf('day').add(DAY_END_H, 'hour').valueOf()
+
+    for (const item of occupied) {
+      if (item.end <= currentStart) {
+        minStart = Math.max(minStart, item.end)
+        continue
+      }
+      if (item.start >= currentEnd) {
+        maxEnd = Math.min(maxEnd, item.start)
+        break
+      }
+    }
+
+    return { minStart, maxEnd }
+  }
+
+  const getEventVisualStyle = (startMs: number, endMs: number, slotStart: number, slotEnd: number) => {
+    const rawLeftPx = ((startMs - rangeStart.valueOf()) / totalMs) * ganttContentWidth
+    const rawWidthPx = Math.max(1, ((endMs - startMs) / totalMs) * ganttContentWidth)
+    const slotLeftPx = ((slotStart - rangeStart.valueOf()) / totalMs) * ganttContentWidth
+    const slotRightPx = ((slotEnd - rangeStart.valueOf()) / totalMs) * ganttContentWidth
+    const slotWidthPx = Math.max(0, slotRightPx - slotLeftPx)
+    const visualWidthPx = Math.min(Math.max(rawWidthPx, MIN_EVENT_VISIBLE_PX), Math.max(MIN_EVENT_VISIBLE_PX, slotWidthPx))
+    const visualLeftPx = clamp(rawLeftPx, slotLeftPx, Math.max(slotLeftPx, slotRightPx - visualWidthPx))
+
+    return {
+      left: `${(visualLeftPx / ganttContentWidth) * 100}%`,
+      width: `${(visualWidthPx / ganttContentWidth) * 100}%`,
+    }
   }
 
   // ── Drag ─────────────────────────────────────────────────────────────────
@@ -245,6 +313,19 @@ export default function TimelineEditor() {
           duration: Math.round((arr - dep) / 60000),
         })
       } else {
+        const event = Array.from(useTimelineStore.getState().planEvents.values()).find(item => item.id === ds.entityId)
+        if (!event) return
+        const bounds = getEventSlotBounds(event.timelineId, event.id)
+        if (!bounds) return
+        const duration = ds.startArrMs - ds.startDepMs
+        if (ds.action === 'move') {
+          dep = clamp(dep, bounds.minStart, bounds.maxEnd - duration)
+          arr = dep + duration
+        } else if (ds.action === 'resize-l') {
+          dep = clamp(dep, bounds.minStart, arr - SNAP_MS)
+        } else {
+          arr = clamp(arr, dep + SNAP_MS, bounds.maxEnd)
+        }
         updE(ds.entityId, { startTime: dayjs(dep).toISOString(), endTime: dayjs(arr).toISOString() })
       }
     }
@@ -388,7 +469,12 @@ export default function TimelineEditor() {
         return gapEvents.map(ev => (
           <div key={ev.id}
             className="gantt-block plan-event-block"
-            style={{ left: `${toLeftPct(ev.startTime)}%`, width: `${toWidthPct(ev.startTime, ev.endTime)}%` }}
+            style={getEventVisualStyle(
+              dayjs(ev.startTime).valueOf(),
+              dayjs(ev.endTime).valueOf(),
+              gap.start,
+              gap.end,
+            )}
             onMouseDown={e => startEventDrag(e, ev, 'move')}
             onContextMenu={e => openEventCtx(e, ev.id)}
             title={`${ev.label}\n${dayjs(ev.startTime).format('HH:mm')}–${dayjs(ev.endTime).format('HH:mm')}\n右键删除`}
@@ -404,13 +490,12 @@ export default function TimelineEditor() {
       // Grouped
       const minStart = Math.min(...gapEvents.map(e => dayjs(e.startTime).valueOf()))
       const maxEnd = Math.max(...gapEvents.map(e => dayjs(e.endTime).valueOf()))
-      const groupLeft = `${toLeftPct(dayjs(minStart).toISOString())}%`
-      const groupWidth = `${toWidthPct(dayjs(minStart).toISOString(), dayjs(maxEnd).toISOString())}%`
+      const groupStyle = getEventVisualStyle(minStart, maxEnd, gap.start, gap.end)
 
       if (!isExpanded) {
         return [(
           <div key={groupKey} className="gantt-block plan-event-group"
-            style={{ left: groupLeft, width: groupWidth }}
+            style={groupStyle}
             onClick={() => setExpandedGroups(prev => new Set([...prev, groupKey]))}
             title={`${gapEvents.length} 个事项，点击展开`}
           >
@@ -424,7 +509,7 @@ export default function TimelineEditor() {
       const expandedHeight = gapEvents.length * 30 + 18
       return [(
         <div key={groupKey} className="gantt-block plan-event-group expanded"
-          style={{ left: groupLeft, width: groupWidth, height: `${expandedHeight}px`, top: '4px', bottom: 'auto' }}
+          style={{ ...groupStyle, height: `${expandedHeight}px`, top: '4px', bottom: 'auto' }}
         >
           <button className="group-collapse-btn"
             onClick={() => setExpandedGroups(prev => { const n = new Set(prev); n.delete(groupKey); return n })}

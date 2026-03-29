@@ -1,6 +1,6 @@
 {
   "name": "itinerary-scheduler",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "约束驱动的行程规划工具 - WebApp 拖拽应用",
   "type": "module",
   "scripts": {

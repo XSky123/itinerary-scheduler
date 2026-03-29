@@ -88,6 +88,7 @@ export interface PlanEventBlock {
   startTime: string;   // ISO8601
   endTime: string;     // ISO8601
   label: string;
+  notes?: string;
 }
 
 /**

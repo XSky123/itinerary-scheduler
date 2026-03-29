@@ -56,7 +56,7 @@ export function generateItinerary(
           events.push({
             time: transit.arrivalTime,
             type: 'gap',
-            description: `间隙时间 (${gapDuration} 分钟)`,
+            description: '间隙时间',
             duration: gapDuration,
           });
         }
