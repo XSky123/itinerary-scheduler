@@ -7,6 +7,7 @@
 - Plan events must never overlap another plan event or a transit in the same plan. Reject moves or edits that would break this invariant and show a user-facing reason.
 - `dist/` is generated output and must not be committed.
 - GitHub Pages deployment is manual through `.github/workflows/deploy-pages.yml`.
+- Use conservative semantic versioning. Default to a patch bump (`x.y.z` → `x.y.(z+1)`) for compatible UI adjustments, bug fixes, performance work, documentation or sample-data changes, and small isolated features. Use a minor bump only for a clearly defined product milestone or a substantial set of new capabilities. Use a major bump only for intentionally incompatible changes. Do not bump the application version for ordinary commits unless a release is being prepared.
 - After every major-version or major-feature commit, explicitly remind the user and ask whether to publish the new version to GitHub Pages. Do not silently dispatch Pages unless the user already requested publishing in the same task.
 - Keep repository text, commit messages, GitHub descriptions, release notes, and API JSON bodies in UTF-8. On Windows, send non-ASCII API payloads as explicit UTF-8 bytes and verify the remote text after publishing.
 - Before publishing Pages, render the live app and tutorial at desktop and narrow widths; verify Markdown emphasis, CJK font fallback, version text, and the exported HTML layout visually.
