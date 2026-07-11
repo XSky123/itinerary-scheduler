@@ -35,12 +35,13 @@ try {
   assert.equal(initial.selectedTimelineId, 'sample-plan')
   assert.equal(initial.timelines.get('sample-plan').name, '计划 1')
   assert.deepEqual(initial.timelines.get('sample-plan').segments.map(segment => segment.transitId), [
-    'sample-train-3', 'sample-bus-5', 'sample-return-bus-5', 'sample-return-train-5',
+    'sample-train-1', 'sample-bus-3', 'sample-return-bus-3', 'sample-return-train-4',
   ])
-  assert.equal(initial.transits.get('sample-train-3').departureTime.includes('T13:40:00'), true)
-  assert.equal(initial.transits.get('sample-bus-5').arrivalTime.includes('T16:54:00'), true)
-  assert.equal(initial.transits.get('sample-return-bus-5').departureTime.includes('T17:20:00'), true)
-  assert.equal(initial.transits.get('sample-return-train-5').arrivalTime.includes('T21:40:00'), true)
+  assert.equal(initial.transits.get('sample-train-1').departureTime.includes('T08:21:00'), true)
+  assert.equal(initial.transits.get('sample-bus-3').departureTime.includes('T11:05:00'), true)
+  assert.equal(initial.transits.get('sample-return-bus-3').departureTime.includes('T12:40:00'), true)
+  assert.equal(initial.transits.get('sample-return-train-4').departureTime.includes('T16:08:00'), true)
+  assert.equal(initial.timelines.get('sample-plan').totalDuration, 629)
 
   const parsed = parseTimetableText('09:00-11:30 JR Test\n12:00→12:40 Bus Test', {
     date: '2026-07-11', type: 'train', category: 'row-test',

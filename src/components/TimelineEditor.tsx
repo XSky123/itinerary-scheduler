@@ -190,7 +190,7 @@ export default function TimelineEditor() {
   const dragFrameRef = useRef<number | null>(null)
   const ganttRef = useRef<HTMLDivElement>(null)
   const candidateClickTimerRef = useRef<number | null>(null)
-  const confirmTimerRef = useRef<number | null>(null)
+  const cancelConfirmButtonRef = useRef<HTMLButtonElement>(null)
 
   const transits = useMemo(() => Array.from(transitsMap.values()), [transitsMap])
   const timelines = useMemo(() => Array.from(timelinesMap.values()), [timelinesMap])
@@ -535,8 +535,16 @@ export default function TimelineEditor() {
   }
   useEffect(() => () => {
     if (candidateClickTimerRef.current !== null) window.clearTimeout(candidateClickTimerRef.current)
-    if (confirmTimerRef.current !== null) window.clearTimeout(confirmTimerRef.current)
   }, [])
+  useEffect(() => {
+    if (!confirmAction) return
+    cancelConfirmButtonRef.current?.focus()
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setConfirmAction(null)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [confirmAction])
   const handleTransitKeyDown = (e: React.KeyboardEvent, transit: TransitOption) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
@@ -580,37 +588,22 @@ export default function TimelineEditor() {
     setContextMenu(null)
   }
 
-  const clearConfirmTimer = () => {
-    if (confirmTimerRef.current !== null) {
-      window.clearTimeout(confirmTimerRef.current)
-      confirmTimerRef.current = null
-    }
-  }
-  const armConfirmation = (action: 'clear' | 'restore') => {
-    clearConfirmTimer()
-    setConfirmAction(action)
-    setInteractionMessage(action === 'clear'
-      ? '再点一次「确认清空」：将清空交通行、班次和事项，保留空的「计划 1」（可撤销）。'
-      : '再点一次「确认覆盖」：当前内容将替换为根室官方时刻快照（可撤销）。')
-    confirmTimerRef.current = window.setTimeout(() => {
-      confirmTimerRef.current = null
-      setConfirmAction(null)
-    }, 5000)
-  }
   const handleClearAll = () => {
     if (!hasClearableData) return
-    if (confirmAction !== 'clear') { armConfirmation('clear'); return }
-    clearConfirmTimer()
-    clearAll()
-    setConfirmAction(null)
-    setInteractionMessage('已清空行程内容并保留空的「计划 1」。点 ↩ 或按 Ctrl+Z 可撤销。')
+    setConfirmAction('clear')
   }
   const handleRestoreDemo = () => {
-    if (confirmAction !== 'restore') { armConfirmation('restore'); return }
-    clearConfirmTimer()
-    restoreDemo()
+    setConfirmAction('restore')
+  }
+  const handleConfirmAction = () => {
+    if (confirmAction === 'clear') {
+      clearAll()
+      setInteractionMessage('已清空行程内容并保留空的「计划 1」。点 ↩ 或按 Ctrl+Z 可撤销。')
+    } else if (confirmAction === 'restore') {
+      restoreDemo()
+      setInteractionMessage('已恢复根室官方时刻快照。点 ↩ 或按 Ctrl+Z 可撤销。')
+    }
     setConfirmAction(null)
-    setInteractionMessage('已恢复根室官方时刻快照。点 ↩ 或按 Ctrl+Z 可撤销。')
   }
 
   // ── Plan lane right-click → add event block ───────────────────────────────
@@ -798,14 +791,12 @@ export default function TimelineEditor() {
           <button className="btn-undoredo" onClick={redo} disabled={future.length === 0} title="恢复 (Ctrl+Y)" aria-label="恢复">↪</button>
           <button className="btn-clear-all" onClick={handleClearAll}
             disabled={!hasClearableData}
-            title="清空行程内容，保留空的计划 1（需二次确认，可撤销）"
-            data-confirming={confirmAction === 'clear'}>
-            {confirmAction === 'clear' ? '确认清空' : '一键清空'}
+            title="清空行程内容，保留空的计划 1（弹窗确认，可撤销）">
+            一键清空
           </button>
           <button className="btn-restore-demo" onClick={handleRestoreDemo}
-            title="用根室官方时刻快照覆盖当前内容（需二次确认，可撤销）"
-            data-confirming={confirmAction === 'restore'}>
-            {confirmAction === 'restore' ? '确认覆盖' : '恢复官方示例'}
+            title="用根室官方时刻快照覆盖当前内容（弹窗确认，可撤销）">
+            恢复官方示例
           </button>
         </div>
         <form className="plan-create-form" onSubmit={handleCreate}>
@@ -982,6 +973,36 @@ export default function TimelineEditor() {
           <span className="plan-footer-name">{timelines.find(t => t.id === selectedTimelineId)?.name}<span style={{ fontWeight: 400, color: '#9ca3af' }}> 预览中</span></span></>
         )}
       </div>
+
+      {confirmAction && (
+        <div className="confirm-modal-backdrop" onMouseDown={event => {
+          if (event.target === event.currentTarget) setConfirmAction(null)
+        }}>
+          <div className="confirm-modal" role="alertdialog" aria-modal="true"
+            aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-description">
+            <div className={`confirm-modal-icon ${confirmAction}`} aria-hidden="true">
+              {confirmAction === 'clear' ? '!' : '↻'}
+            </div>
+            <h2 id="confirm-modal-title">
+              {confirmAction === 'clear' ? '确定清空当前行程？' : '确定恢复官方示例？'}
+            </h2>
+            <p id="confirm-modal-description">
+              {confirmAction === 'clear'
+                ? '交通行、班次和事项会被清空，仅保留一个空的“计划 1”。'
+                : '当前交通行、班次、计划和事项会被根室官方时刻示例覆盖。'}
+            </p>
+            <p className="confirm-modal-undo">操作完成后仍可点击 ↩ 或按 Ctrl+Z 撤销。</p>
+            <div className="confirm-modal-actions">
+              <button type="button" ref={cancelConfirmButtonRef} className="confirm-modal-cancel" onClick={() => setConfirmAction(null)}>取消</button>
+              <button type="button"
+                className={`confirm-dialog-confirm ${confirmAction === 'clear' ? 'danger' : 'primary'}`}
+                onClick={handleConfirmAction}>
+                {confirmAction === 'clear' ? '确认清空' : '确认恢复'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {contextMenu && (
         <>

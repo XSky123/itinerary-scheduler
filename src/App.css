@@ -58,6 +58,7 @@
   flex: 1;
   overflow: hidden;
 }
+.app-layout.library-collapsed { grid-template-columns: 42px minmax(0, 1fr) 320px; }
 
 /* ── Panels ───────────────────────────────────────────── */
 .panel {
@@ -68,6 +69,7 @@
   min-width: 0;
 }
 .panel-library { background: #f8f9fc; border-right: 1px solid #e4e6f0; }
+.panel-library.collapsed { background: #f1f4fb; }
 .panel-editor  { background: #f1f3f9; border-right: 1px solid #e4e6f0; }
 .panel-preview { background: #f8f9fc; }
 
@@ -88,6 +90,35 @@
   gap: 0.4rem;
 }
 .panel-header-actions { display: flex; align-items: center; gap: 6px; }
+.library-collapse-btn {
+  border-left: 1px solid #dfe3ef;
+  border-radius: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding-inline: 7px;
+}
+.library-expand-btn {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: #4f65c8;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 5px;
+}
+.library-expand-btn:hover { background: #e8edff; }
+.library-expand-btn > span:first-child { font-size: 1.25rem; line-height: 1; }
+.library-expand-label {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.12em;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.library-expand-btn .badge { padding: 0 4px; min-width: 22px; }
 
 .batch-import-form {
   display: flex;
@@ -360,7 +391,6 @@
 }
 .btn-clear-all:hover:not(:disabled) { background: #fef2f2; border-color: #ef4444; }
 .btn-clear-all:disabled { cursor: not-allowed; opacity: 0.35; }
-.btn-clear-all[data-confirming="true"] { color: #fff; background: #dc2626; border-color: #dc2626; }
 .btn-restore-demo {
   background: #fff;
   border: 1px solid #93c5fd;
@@ -374,7 +404,57 @@
   white-space: nowrap;
 }
 .btn-restore-demo:hover { background: #eff6ff; border-color: #3b82f6; }
-.btn-restore-demo[data-confirming="true"] { color: #fff; background: #d97706; border-color: #d97706; }
+
+/* ── Destructive/overwrite confirmation modal ────────── */
+.confirm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 25, 45, 0.42);
+  backdrop-filter: blur(2px);
+}
+.confirm-modal {
+  width: min(420px, 100%);
+  border-radius: 14px;
+  padding: 22px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(26, 32, 58, 0.28);
+  color: #273043;
+}
+.confirm-modal-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.confirm-modal-icon.clear { color: #b91c1c; background: #fee2e2; }
+.confirm-modal-icon.restore { color: #1d4ed8; background: #dbeafe; }
+.confirm-modal h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.confirm-modal p { margin: 0; color: #5b6477; font-size: 0.82rem; line-height: 1.6; }
+.confirm-modal .confirm-modal-undo { margin-top: 6px; color: #7c869c; font-size: 0.75rem; }
+.confirm-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.confirm-modal-actions button {
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.confirm-modal-cancel { color: #4b5563; background: #fff; border: 1px solid #d1d5db; }
+.confirm-modal-cancel:hover { background: #f7f8fb; }
+.confirm-dialog-confirm { color: #fff; border: 1px solid transparent; }
+.confirm-dialog-confirm.danger { background: #dc2626; }
+.confirm-dialog-confirm.danger:hover { background: #b91c1c; }
+.confirm-dialog-confirm.primary { background: #2563eb; }
+.confirm-dialog-confirm.primary:hover { background: #1d4ed8; }
+.confirm-modal-actions button:focus-visible { outline: 3px solid rgba(59, 130, 246, 0.35); outline-offset: 2px; }
 
 .plan-create-form {
   display: flex;
@@ -819,7 +899,8 @@
 
 /* ── Row label editing in Gantt ───────────────────────── */
 .gantt-label-col-source {
-  position: relative;
+  position: sticky;
+  background: #f7f8fc;
 }
 .gantt-label.gantt-label-editable {
   cursor: pointer;
@@ -1086,6 +1167,7 @@
 
 @media (max-width: 1200px) {
   .app-layout { grid-template-columns: 240px minmax(0, 1fr) 280px; }
+  .app-layout.library-collapsed { grid-template-columns: 42px minmax(0, 1fr) 280px; }
   .app-header p { display: none; }
 }
 
@@ -1107,6 +1189,18 @@
     flex-direction: column;
     overflow: visible;
   }
+  .app-layout.library-collapsed { display: flex; }
+  .panel-library.collapsed {
+    order: 2;
+    min-height: 44px;
+    height: 44px;
+  }
+  .panel-library.collapsed .library-expand-btn {
+    flex-direction: row;
+    justify-content: center;
+    padding: 6px 12px;
+  }
+  .panel-library.collapsed .library-expand-label { writing-mode: horizontal-tb; }
   .panel-library,
   .panel-editor,
   .panel-preview {

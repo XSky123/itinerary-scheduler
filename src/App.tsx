@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import TransitLibrary from './components/TransitLibrary'
 import TimelineEditor from './components/TimelineEditor'
 import ItineraryPreview from './components/ItineraryPreview'
@@ -5,6 +6,15 @@ import { APP_VERSION, BUILD_DATETIME } from './version'
 import './App.css'
 
 function App() {
+  const [libraryCollapsed, setLibraryCollapsed] = useState(
+    () => localStorage.getItem('libraryCollapsed') === 'true',
+  )
+
+  const handleLibraryCollapsedChange = useCallback((collapsed: boolean) => {
+    setLibraryCollapsed(collapsed)
+    localStorage.setItem('libraryCollapsed', String(collapsed))
+  }, [])
+
   return (
     <div className="app">
       <header className="app-header">
@@ -16,8 +26,11 @@ function App() {
           href="./tutorial.html"
           target="_blank" rel="noreferrer">📖 使用教程</a>
       </header>
-      <div className="app-layout">
-        <TransitLibrary />
+      <div className={`app-layout${libraryCollapsed ? ' library-collapsed' : ''}`}>
+        <TransitLibrary
+          collapsed={libraryCollapsed}
+          onCollapsedChange={handleLibraryCollapsedChange}
+        />
         <TimelineEditor />
         <ItineraryPreview />
       </div>

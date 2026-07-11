@@ -150,10 +150,10 @@ function createSampleState() {
     makeTransit('sample-return-train-4', 'train', '5630D 普通：根室 → 钏路', '16:08', '18:50', 'sample-row-return-rail', jrNote),
     makeTransit('sample-return-train-5', 'train', '5632D 普通：根室 → 钏路', '18:59', '21:40', 'sample-row-return-rail', jrNote),
   ];
-  const selectedRail = rails[2];
-  const selectedBus = outboundBuses[4];
-  const selectedReturnBus = returnBuses[4];
-  const selectedReturnRail = returnRails[4];
+  const selectedRail = rails[0];
+  const selectedBus = outboundBuses[2];
+  const selectedReturnBus = returnBuses[2];
+  const selectedReturnRail = returnRails[3];
   const timeline: Timeline = {
     id: 'sample-plan',
     name: '计划 1',
@@ -164,7 +164,7 @@ function createSampleState() {
       { transitId: selectedReturnRail.id, order: 3, validConnection: true },
     ],
     isValid: true,
-    totalDuration: 480,
+    totalDuration: 629,
     createdAt,
     updatedAt: createdAt,
   };
@@ -662,7 +662,28 @@ export const useTimelineStore = create<TimelineStore>()(
             /sample-(?:train|bus)-\d+/.test(id) &&
             transit.notes === '演示时间，不是实时时刻表；出发前请按官方信息修改。'
           ) && (p.timelines ?? []).length === 1 && p.timelines?.[0]?.[0] === 'sample-plan';
-        if (isUntouchedLegacySample || isUntouchedV14Sample) {
+        const oldV15Selection = [
+          'sample-train-3', 'sample-bus-5', 'sample-return-bus-5', 'sample-return-train-5',
+        ];
+        const persistedSamplePlan = (p.timelines ?? []).length === 1 && p.timelines?.[0]?.[0] === 'sample-plan'
+          ? p.timelines[0][1]
+          : undefined;
+        const isUntouchedV15Sample = persistedTransits.length === current.transits.size &&
+          persistedTransits.every(([id, transit]) => {
+            const expected = current.transits.get(id);
+            return Boolean(expected) &&
+              transit.type === expected?.type &&
+              transit.name === expected?.name &&
+              dayjs(transit.departureTime).format('HH:mm') === dayjs(expected?.departureTime).format('HH:mm') &&
+              dayjs(transit.arrivalTime).format('HH:mm') === dayjs(expected?.arrivalTime).format('HH:mm') &&
+              transit.category === expected?.category &&
+              transit.notes === expected?.notes;
+          }) &&
+          persistedSamplePlan?.name === '计划 1' &&
+          persistedSamplePlan.segments.map(segment => segment.transitId).join('|') === oldV15Selection.join('|') &&
+          (p.planEvents ?? []).length === 0 &&
+          (p.rows ?? []).map(row => row.id).join('|') === current.rows.map(row => row.id).join('|');
+        if (isUntouchedLegacySample || isUntouchedV14Sample || isUntouchedV15Sample) {
           return { ...current, config: p.config ?? current.config };
         }
         const transitMap = new Map<string, TransitOption>(persistedTransits);
