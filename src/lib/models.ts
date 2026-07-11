@@ -50,6 +50,7 @@ export interface Timeline {
  */
 export interface ItineraryEvent {
   time: string;                  // ISO8601 格式
+  endTime?: string;              // 区间结束时间（交通段/事项用）
   type: 'depart' | 'arrive' | 'transit' | 'gap';
   description: string;
   duration?: number;             // 间隙时长 (分钟)

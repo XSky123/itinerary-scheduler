@@ -37,6 +37,7 @@ interface TimelineStore {
 
   // 班次管理
   addTransit: (transit: TransitOption) => void;
+  importTransits: (transits: TransitOption[]) => void;
   updateTransit: (id: string, transit: Partial<TransitOption>) => boolean;
   removeTransit: (id: string) => void;
   getTransit: (id: string) => TransitOption | undefined;
@@ -99,48 +100,57 @@ function createSampleState() {
   const date = dayjs().format('YYYY-MM-DD');
   const at = (time: string) => `${date}T${time}:00`;
   const createdAt = new Date().toISOString();
-  const rail: TransitOption = {
-    id: 'sample-transit-rail',
-    type: 'train',
-    name: 'JR 花咲线：钏路 → 根室',
-    departureTime: at('09:00'),
-    arrivalTime: at('11:30'),
-    duration: 150,
-    category: 'sample-row-rail',
-    notes: '演示时间，出发前请按实际时刻表修改。',
-  };
-  const bus: TransitOption = {
-    id: 'sample-transit-bus',
-    type: 'bus',
-    name: '根室交通：根室站前 → 纳沙布岬',
-    departureTime: at('12:00'),
-    arrivalTime: at('12:40'),
-    duration: 40,
-    category: 'sample-row-bus',
-    notes: '演示时间，出发前请按实际时刻表修改。',
-  };
+  const demoNote = '演示时间，不是实时时刻表；出发前请按官方信息修改。';
+  const makeTransit = (
+    id: string, type: TransitOption['type'], name: string,
+    departure: string, arrival: string, category: string
+  ): TransitOption => ({
+    id, type, name,
+    departureTime: at(departure),
+    arrivalTime: at(arrival),
+    duration: dayjs(at(arrival)).diff(dayjs(at(departure)), 'minute'),
+    category,
+    notes: demoNote,
+  });
+  const rails = [
+    makeTransit('sample-train-1', 'train', 'JR 花咲线 1：钏路 → 根室', '05:35', '08:05', 'sample-row-rail'),
+    makeTransit('sample-train-2', 'train', 'JR 快速はなさき：钏路 → 根室', '08:50', '11:20', 'sample-row-rail'),
+    makeTransit('sample-train-3', 'train', 'JR 花咲线 3：钏路 → 根室', '11:15', '13:45', 'sample-row-rail'),
+    makeTransit('sample-train-4', 'train', 'JR 花咲线 4：钏路 → 根室', '13:25', '15:55', 'sample-row-rail'),
+    makeTransit('sample-train-5', 'train', 'JR 花咲线 5：钏路 → 根室', '16:12', '18:42', 'sample-row-rail'),
+  ];
+  const buses = [
+    makeTransit('sample-bus-1', 'bus', '根室交通 1：根室站前 → 纳沙布岬', '08:20', '09:00', 'sample-row-bus'),
+    makeTransit('sample-bus-2', 'bus', '根室交通 2：根室站前 → 纳沙布岬', '10:10', '10:50', 'sample-row-bus'),
+    makeTransit('sample-bus-3', 'bus', '根室交通 3：根室站前 → 纳沙布岬', '12:00', '12:40', 'sample-row-bus'),
+    makeTransit('sample-bus-4', 'bus', '根室交通 4：根室站前 → 纳沙布岬', '14:15', '14:55', 'sample-row-bus'),
+    makeTransit('sample-bus-5', 'bus', '根室交通 5：根室站前 → 纳沙布岬', '16:10', '16:50', 'sample-row-bus'),
+    makeTransit('sample-bus-6', 'bus', '根室交通 6：根室站前 → 纳沙布岬', '17:50', '18:30', 'sample-row-bus'),
+  ];
+  const selectedRail = rails[0];
+  const selectedBus = buses[0];
   const timeline: Timeline = {
     id: 'sample-plan',
     name: '根室：火车转公交（示例）',
     segments: [
-      { transitId: rail.id, order: 0, validConnection: true },
-      { transitId: bus.id, order: 1, validConnection: true },
+      { transitId: selectedRail.id, order: 0, validConnection: true },
+      { transitId: selectedBus.id, order: 1, validConnection: true },
     ],
     isValid: true,
-    totalDuration: 220,
+    totalDuration: 205,
     createdAt,
     updatedAt: createdAt,
   };
   const event: PlanEventBlock = {
     id: 'sample-event-break',
     timelineId: timeline.id,
-    startTime: at('11:35'),
-    endTime: at('11:55'),
+    startTime: at('08:08'),
+    endTime: at('08:15'),
     label: '根室站休息',
     notes: '示例事项',
   };
   return {
-    transits: new Map([[rail.id, rail], [bus.id, bus]]),
+    transits: new Map([...rails, ...buses].map(transit => [transit.id, transit])),
     timelines: new Map([[timeline.id, timeline]]),
     planEvents: new Map([[event.id, event]]),
     rows: [
@@ -282,6 +292,16 @@ export const useTimelineStore = create<TimelineStore>()(
           });
         },
 
+        importTransits: (transits: TransitOption[]) => {
+          if (transits.length === 0) return;
+          pushHistory();
+          set((state) => {
+            const newTransits = new Map(state.transits);
+            for (const transit of transits) newTransits.set(transit.id, transit);
+            return { transits: newTransits };
+          });
+        },
+
         updateTransit: (id: string, updates: Partial<TransitOption>) => {
           const current = get();
           const transit = current.transits.get(id);
@@ -380,15 +400,31 @@ export const useTimelineStore = create<TimelineStore>()(
           const timeline = state.getTimeline(timelineId);
           if (!timeline) return false;
           if (timeline.segments.some(seg => seg.transitId === transitId)) return false;
+          const selectedTransit = state.transits.get(transitId);
+          if (!selectedTransit) return false;
+          const selectedStart = dayjs(selectedTransit.departureTime).valueOf();
+          const selectedEnd = dayjs(selectedTransit.arrivalTime).valueOf();
+          const overlapsEvent = Array.from(state.planEvents.values()).some(event =>
+            event.timelineId === timelineId &&
+            selectedStart < dayjs(event.endTime).valueOf() &&
+            selectedEnd > dayjs(event.startTime).valueOf()
+          );
+          if (overlapsEvent) return false;
 
           pushHistory();
-          const newSegment: TimelineSegment = {
-            transitId, order: timeline.segments.length, validConnection: true, gaps: undefined,
-          };
 
           set((st) => {
             const newTimelines = new Map(st.timelines);
-            const updated = { ...timeline, segments: [...timeline.segments, newSegment] };
+            // A timetable row is an N-choose-1 candidate group. Selecting a new
+            // departure automatically replaces the previous choice from that row.
+            const keptSegments = timeline.segments.filter(segment => {
+              const existing = st.transits.get(segment.transitId);
+              return !selectedTransit.category || existing?.category !== selectedTransit.category;
+            });
+            const newSegment: TimelineSegment = {
+              transitId, order: keptSegments.length, validConnection: true, gaps: undefined,
+            };
+            const updated = { ...timeline, segments: [...keptSegments, newSegment] };
             const revalidated = revalidateTimelineSegments(updated, st.transits, st.config.bufferByTransitType);
             newTimelines.set(timelineId, revalidated);
             return { timelines: newTimelines };
@@ -564,7 +600,15 @@ export const useTimelineStore = create<TimelineStore>()(
           rows: typeof current.rows;
           config: AppConfig;
         };
-        const transitMap = new Map<string, TransitOption>(p.transits ?? []);
+        const persistedTransits = p.transits ?? [];
+        const legacyIds = new Set(persistedTransits.map(([id]) => id));
+        const isUntouchedLegacySample = persistedTransits.length === 2 &&
+          legacyIds.has('sample-transit-rail') && legacyIds.has('sample-transit-bus') &&
+          (p.timelines ?? []).length === 1 && p.timelines?.[0]?.[0] === 'sample-plan';
+        if (isUntouchedLegacySample) {
+          return { ...current, config: p.config ?? current.config };
+        }
+        const transitMap = new Map<string, TransitOption>(persistedTransits);
         const config = p.config ?? current.config;
         // Re-validate all timelines on load to clear any stale isValid state
         const timelinesMap = new Map<string, Timeline>(

@@ -8,3 +8,6 @@
 - `dist/` is generated output and must not be committed.
 - GitHub Pages deployment is manual through `.github/workflows/deploy-pages.yml`.
 - After every major-version or major-feature commit, explicitly remind the user and ask whether to publish the new version to GitHub Pages. Do not silently dispatch Pages unless the user already requested publishing in the same task.
+- Keep repository text, commit messages, GitHub descriptions, release notes, and API JSON bodies in UTF-8. On Windows, send non-ASCII API payloads as explicit UTF-8 bytes and verify the remote text after publishing.
+- Before publishing Pages, render the live app and tutorial at desktop and narrow widths; verify Markdown emphasis, CJK font fallback, version text, and the exported HTML layout visually.
+- Keep text files UTF-8 without BOM and LF. `.editorconfig` and `.gitattributes` are authoritative for repository formatting.

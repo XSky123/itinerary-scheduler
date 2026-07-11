@@ -23,20 +23,13 @@ export function generateItinerary(
 
     if (!transit) continue;
 
-    // 添加出发事件（每个班次都有）
     if (i === 0) startTime = transit.departureTime;
     events.push({
       time: transit.departureTime,
-      type: 'depart',
-      description: `出发 - ${transit.name}`,
-      transitId: transit.id,
-    });
-
-    // 添加到达事件
-    events.push({
-      time: transit.arrivalTime,
-      type: 'arrive',
-      description: `到达 - ${transit.name}`,
+      endTime: transit.arrivalTime,
+      type: 'transit',
+      description: transit.name,
+      duration: transit.duration,
       transitId: transit.id,
     });
 
@@ -55,29 +48,13 @@ export function generateItinerary(
         if (gapDuration > 0) {
           events.push({
             time: transit.arrivalTime,
+            endTime: nextTransit.departureTime,
             type: 'gap',
-            description: '间隙时间',
+            description: '换乘 / 等候',
             duration: gapDuration,
           });
         }
       }
-    }
-  }
-
-  // Keep the preview aligned with the editable plan lanes: custom events may
-  // also live before the first transit or after the last one.
-  if (startTime && endTime) {
-    const dayStart = dayjs(startTime).startOf('day').add(7, 'hour');
-    const dayEnd = dayjs(startTime).startOf('day').add(23, 'hour');
-    const firstDeparture = dayjs(startTime);
-    const lastArrival = dayjs(endTime);
-    const leadingGap = firstDeparture.diff(dayStart, 'minute');
-    const trailingGap = dayEnd.diff(lastArrival, 'minute');
-    if (leadingGap > 0) {
-      events.push({ time: dayStart.toISOString(), type: 'gap', description: '出发前时间', duration: leadingGap });
-    }
-    if (trailingGap > 0) {
-      events.push({ time: lastArrival.toISOString(), type: 'gap', description: '到达后时间', duration: trailingGap });
     }
   }
 
@@ -133,7 +110,11 @@ export function exportAsHTML(
     ...itinerary.events.map(event => ({
       timestamp: dayjs(event.time).valueOf(),
       time: formatTime(event.time),
-      endTime: '',
+      endTime: event.endTime
+        ? formatTime(event.endTime)
+        : event.duration !== undefined
+          ? formatTime(dayjs(event.time).add(event.duration, 'minute').toISOString())
+          : '',
       type: translateEventType(event.type),
       description: event.description,
       notes: '',
@@ -154,7 +135,7 @@ export function exportAsHTML(
 
   const rowHtml = rows.map(row => `
     <div class="timeline-row ${row.cssClass}">
-      <div class="time">${escapeHtml(row.time)}${row.endTime ? `<span>–${escapeHtml(row.endTime)}</span>` : ''}</div>
+      <div class="time"><strong>${escapeHtml(row.time)}</strong>${row.endTime ? `<span class="time-arrow">→</span><strong>${escapeHtml(row.endTime)}</strong>` : ''}</div>
       <div class="marker" aria-hidden="true"></div>
       <div class="detail">
         <div class="detail-head"><span class="type">${escapeHtml(row.type)}</span><strong>${escapeHtml(row.description)}</strong></div>
@@ -171,8 +152,11 @@ export function exportAsHTML(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${safeTitle} · ${date}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&amp;family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <style>
-    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: #1f2937; background: #eef1f8; }
+    :root { color-scheme: light; font-family: "Noto Sans CJK SC", "Noto Sans CJK JP", "Noto Sans SC", "Noto Sans JP", "Microsoft YaHei UI", "Yu Gothic UI", "Hiragino Sans GB", system-ui, sans-serif; color: #1f2937; background: #eef1f8; }
     * { box-sizing: border-box; }
     body { margin: 0; padding: 32px 16px; }
     .sheet { width: min(820px, 100%); margin: auto; background: white; border-radius: 18px; box-shadow: 0 18px 55px rgba(31, 41, 55, .12); overflow: hidden; }
@@ -185,9 +169,9 @@ export function exportAsHTML(
     .summary-value { font-size: 21px; font-weight: 750; color: #111827; }
     main { padding: 24px 38px 34px; }
     h2 { margin: 0 0 14px; font-size: 16px; color: #374151; }
-    .timeline-row { display: grid; grid-template-columns: 84px 18px minmax(0, 1fr) auto; gap: 10px; min-height: 58px; position: relative; }
-    .time { padding-top: 9px; text-align: right; font-weight: 700; color: #374151; font-variant-numeric: tabular-nums; }
-    .time span { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; color: #9ca3af; }
+    .timeline-row { display: grid; grid-template-columns: 122px 18px minmax(0, 1fr) auto; gap: 10px; min-height: 58px; position: relative; }
+    .time { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; padding-top: 9px; color: #374151; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .time-arrow { color: #9ca3af; font-size: 11px; font-weight: 500; }
     .marker { position: relative; }
     .marker::before { content: ""; position: absolute; top: 16px; left: 6px; width: 8px; height: 8px; border-radius: 50%; background: #667eea; box-shadow: 0 0 0 4px #eef0ff; }
     .marker::after { content: ""; position: absolute; top: 28px; bottom: 0; left: 9.5px; width: 1px; background: #e5e7eb; }
@@ -207,7 +191,7 @@ export function exportAsHTML(
       body { padding: 0; background: white; }
       .sheet { border-radius: 0; box-shadow: none; }
       header, main { padding-left: 20px; padding-right: 20px; }
-      .timeline-row { grid-template-columns: 60px 14px minmax(0, 1fr); gap: 7px; }
+      .timeline-row { grid-template-columns: 105px 14px minmax(0, 1fr); gap: 7px; }
       .duration { display: none; }
       .time { font-size: 12px; }
     }
@@ -248,7 +232,7 @@ function translateEventType(type: string): string {
   const typeMap: Record<string, string> = {
     depart: '出发',
     arrive: '到达',
-    transit: '换乘',
+    transit: '交通',
     gap: '间隙',
   };
   

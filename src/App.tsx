@@ -13,7 +13,7 @@ function App() {
           <p>约束驱动的拖拽排程</p>
         </div>
         <a className="tutorial-link"
-          href="https://github.com/XSky123/itinerary-scheduler/blob/main/docs/tutorial.md"
+          href="./tutorial.html"
           target="_blank" rel="noreferrer">📖 使用教程</a>
       </header>
       <div className="app-layout">

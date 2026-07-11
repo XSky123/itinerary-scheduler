@@ -54,7 +54,7 @@
 
 .app-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 260px;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
   flex: 1;
   overflow: hidden;
 }
@@ -87,6 +87,30 @@
   align-items: center;
   gap: 0.4rem;
 }
+.panel-header-actions { display: flex; align-items: center; gap: 6px; }
+
+.batch-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0.65rem 0.875rem;
+  border-bottom: 1px solid #e4e6f0;
+  background: #fff;
+}
+.batch-import-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.batch-import-form select,
+.batch-import-form textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #374151;
+  background: #fff;
+  font: inherit;
+}
+.batch-import-form select { padding: 5px 7px; font-size: 0.75rem; }
+.batch-import-form textarea { padding: 7px 8px; font-size: 0.72rem; line-height: 1.5; resize: vertical; }
+.batch-import-hint { color: #6b7280; font-size: 0.67rem; line-height: 1.45; }
+.batch-import-message { color: #4f46e5; font-size: 0.69rem; line-height: 1.4; }
 
 /* ── Badges & common buttons ──────────────────────────── */
 .badge {
@@ -746,7 +770,17 @@
 .event-transit { background: #f5f3ff; }
 
 .event-icon { font-size: 0.8rem; flex-shrink: 0; }
-.event-time { font-weight: 600; color: #374151; flex-shrink: 0; width: 34px; }
+.event-time-range {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: #374151;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.event-time-range span { color: #9ca3af; font-size: 0.62rem; }
 .event-desc { flex: 1; color: #4b5563; }
 .event-dur  { font-size: 0.68rem; color: #9ca3af; flex-shrink: 0; }
 
@@ -764,6 +798,16 @@
 .row-type-emoji {
   margin-right: 4px;
   font-size: 0.85rem;
+}
+.row-choice-count {
+  margin-left: 5px;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  opacity: 0.72;
+  white-space: nowrap;
 }
 /* Inline edit input for plan name in plan lane */
 .gantt-plan-name-input {
@@ -1018,7 +1062,7 @@
 }
 
 @media (max-width: 1200px) {
-  .app-layout { grid-template-columns: 230px minmax(0, 1fr) 240px; }
+  .app-layout { grid-template-columns: 240px minmax(0, 1fr) 280px; }
   .app-header p { display: none; }
 }
 

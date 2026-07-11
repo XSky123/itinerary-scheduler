@@ -20,15 +20,24 @@ const server = await createServer({
 
 try {
   const { useTimelineStore } = await server.ssrLoadModule('/src/store/timelineStore.ts')
-  const { exportAsHTML } = await server.ssrLoadModule('/src/lib/scheduler.ts')
+  const { exportAsHTML, generateItinerary } = await server.ssrLoadModule('/src/lib/scheduler.ts')
+  const { parseTimetableText } = await server.ssrLoadModule('/src/lib/timetableParser.ts')
   const initial = useTimelineStore.getState()
 
   // A brand-new browser receives the editable Nemuro train-to-bus sample.
-  assert.equal(initial.transits.has('sample-transit-rail'), true)
-  assert.equal(initial.transits.has('sample-transit-bus'), true)
+  assert.equal(initial.transits.size, 11)
+  assert.equal(initial.transits.has('sample-train-2'), true)
+  assert.equal(initial.transits.has('sample-bus-3'), true)
   assert.equal(initial.timelines.has('sample-plan'), true)
   assert.equal(initial.planEvents.has('sample-event-break'), true)
   assert.equal(initial.selectedTimelineId, 'sample-plan')
+
+  const parsed = parseTimetableText('09:00-11:30 JR Test\n12:00→12:40 Bus Test', {
+    date: '2026-07-11', type: 'train', category: 'row-test',
+  })
+  assert.equal(parsed.errors.length, 0)
+  assert.equal(parsed.transits.length, 2)
+  assert.equal(parsed.transits[0].name, 'JR Test')
 
   const flight = {
     id: 'flight',
@@ -77,6 +86,10 @@ try {
     future: [],
   })
 
+  const generated = generateItinerary(timeline, useTimelineStore.getState().transits)
+  assert.deepEqual(generated.events.map(event => event.type), ['transit', 'transit'])
+  assert.equal(generated.events[0].endTime, flight.arrivalTime)
+
   // Candidate options may overlap; adding one must remain valid store behavior.
   useTimelineStore.getState().addTransit({
     ...train,
@@ -112,8 +125,9 @@ try {
     timelineId: 'plan',
     events: [{
       time: '2026-07-11T08:00:00+09:00',
-      type: 'depart',
-      description: '出发 - <script>alert(1)</script>',
+      endTime: '2026-07-11T09:00:00+09:00',
+      type: 'transit',
+      description: '<script>alert(1)</script>',
     }],
     startTime: '2026-07-11T08:00:00+09:00',
     endTime: '2026-07-11T10:20:00+09:00',
@@ -125,6 +139,7 @@ try {
   assert.match(exported, /事项/)
   assert.match(exported, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   assert.doesNotMatch(exported, /<script>alert\(1\)<\/script>/)
+  assert.match(exported, /08:00<\/strong>.*09:00<\/strong>/)
 
   // One-click clear removes every editable collection, and one undo restores it all.
   useTimelineStore.getState().clearAll()
@@ -138,6 +153,30 @@ try {
   assert.equal(useTimelineStore.getState().timelines.has('plan'), true)
   assert.equal(useTimelineStore.getState().planEvents.has('event'), true)
   assert.equal(useTimelineStore.getState().selectedTimelineId, 'plan')
+
+  const beforeImportCount = useTimelineStore.getState().transits.size
+  useTimelineStore.getState().importTransits(parsed.transits)
+  assert.equal(useTimelineStore.getState().transits.size, beforeImportCount + 2)
+  useTimelineStore.getState().undo()
+  assert.equal(useTimelineStore.getState().transits.size, beforeImportCount)
+
+  // A source timetable row is N-choose-1 inside each plan.
+  assert.equal(useTimelineStore.getState().updateTransit('train', { category: 'row-train' }), true)
+  assert.equal(useTimelineStore.getState().updateTransit('train-alternative', { category: 'row-train' }), true)
+  assert.equal(useTimelineStore.getState().addSegmentToTimeline('plan', 'train-alternative'), true)
+  const selectedIds = useTimelineStore.getState().timelines.get('plan').segments.map(segment => segment.transitId)
+  assert.equal(selectedIds.includes('train'), false)
+  assert.equal(selectedIds.includes('train-alternative'), true)
+
+  useTimelineStore.getState().addTransit({
+    ...train,
+    id: 'train-event-conflict',
+    category: 'row-train',
+    departureTime: '2026-07-11T10:40:00+09:00',
+    arrivalTime: '2026-07-11T11:10:00+09:00',
+  })
+  assert.equal(useTimelineStore.getState().addSegmentToTimeline('plan', 'train-event-conflict'), false)
+  assert.equal(useTimelineStore.getState().timelines.get('plan').segments.some(segment => segment.transitId === 'train-alternative'), true)
 
   console.log('Behavior verification passed')
 } finally {

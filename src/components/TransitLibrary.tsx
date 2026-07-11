@@ -4,6 +4,7 @@ import { shallow } from 'zustand/shallow'
 import { useTimelineStore } from '../store/timelineStore'
 import type { TransitOption, TransitType } from '../lib/models'
 import { getRowColor } from '../lib/rowColors'
+import { parseTimetableText } from '../lib/timetableParser'
 
 const TYPE_LABELS: Record<TransitType, string> = {
   flight: '飞机', train: '火车', bus: '巴士', shuttle: '摆渡', custom: '自定义',
@@ -176,13 +177,14 @@ function TransitCard({
 
 export default function TransitLibrary() {
   const {
-    transitsMap, rows, addTransit, updateTransit, removeTransit,
+    transitsMap, rows, addTransit, importTransits, updateTransit, removeTransit,
     editingTransitId, setEditingTransitId,
     formPrefill, setFormPrefill,
   } = useTimelineStore(state => ({
     transitsMap: state.transits,
     rows: state.rows,
     addTransit: state.addTransit,
+    importTransits: state.importTransits,
     updateTransit: state.updateTransit,
     removeTransit: state.removeTransit,
     editingTransitId: state.editingTransitId,
@@ -195,6 +197,9 @@ export default function TransitLibrary() {
 
   const [filter, setFilter] = useState<string>(() => rows[0]?.id ?? 'all')
   const [showForm, setShowForm] = useState(true)
+  const [showBatch, setShowBatch] = useState(false)
+  const [batchText, setBatchText] = useState('')
+  const [batchMessage, setBatchMessage] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
 
   const [type, setType] = useState<TransitType>(() => (localStorage.getItem('lastTransitType') as TransitType) ?? 'flight')
@@ -305,12 +310,53 @@ export default function TransitLibrary() {
     setDepErr(false); setArrErr(false)
   }
 
+  const handleBatchImport = (e: React.FormEvent) => {
+    e.preventDefault()
+    const result = parseTimetableText(batchText, {
+      date: dayjs().format('YYYY-MM-DD'),
+      type,
+      category: category || undefined,
+      notes: '批量导入的候选班次',
+    })
+    if (result.transits.length > 0) importTransits(result.transits)
+    setBatchMessage(result.errors.length > 0
+      ? `已导入 ${result.transits.length} 班；${result.errors.join('；')}`
+      : `已导入 ${result.transits.length} 个候选班次`)
+    if (result.transits.length > 0 && result.errors.length === 0) setBatchText('')
+  }
+
   return (
     <aside className="panel panel-library">
       <div className="panel-header">
         <h2>班次库 <span className="badge">{transits.length}</span></h2>
-        <button className="btn-text" onClick={() => setShowForm(f => !f)}>{showForm ? '收起' : '＋ 添加'}</button>
+        <div className="panel-header-actions">
+          <button className="btn-text" onClick={() => { setShowBatch(v => !v); setShowForm(false); setBatchMessage('') }}>
+            {showBatch ? '收起导入' : '批量导入'}
+          </button>
+          <button className="btn-text" onClick={() => { setShowForm(f => !f); setShowBatch(false) }}>{showForm ? '收起' : '＋ 单班'}</button>
+        </div>
       </div>
+
+      {showBatch && (
+        <form className="batch-import-form" onSubmit={handleBatchImport}>
+          <div className="batch-import-selects">
+            <select value={type} onChange={e => handleTypeChange(e.target.value as TransitType)}>
+              {(['flight','train','bus','shuttle','custom'] as TransitType[]).map(t => (
+                <option key={t} value={t}>{TYPE_EMOJI[t]} {TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+            <select value={category} onChange={e => setCategory(e.target.value)}>
+              {rows.length === 0 && <option value="">-- 无分类 --</option>}
+              {rows.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          <textarea value={batchText} onChange={e => { setBatchText(e.target.value); setBatchMessage('') }}
+            placeholder={'每行一班，例如：\n09:00-11:30 JR 花咲线\n12:00-12:40 根室交通'} rows={5} />
+          <div className="batch-import-hint">格式：出发时间-到达时间 班次名称。同一交通行中的班次是 N 选 1 候选。</div>
+          {batchMessage && <div className="batch-import-message" role="status">{batchMessage}</div>}
+          <button type="submit" className="btn-primary" disabled={!batchText.trim()}>导入整张时刻表</button>
+        </form>
+      )}
 
       {showForm && (
         <form className="add-form" onSubmit={handleAdd}>

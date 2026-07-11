@@ -5,3 +5,4 @@
 export * from './models';
 export * from './validators';
 export * from './scheduler';
+export * from './timetableParser';

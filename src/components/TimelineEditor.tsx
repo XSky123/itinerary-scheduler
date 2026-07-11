@@ -499,7 +499,11 @@ export default function TimelineEditor() {
     const tl = timelines.find(t => t.id === timelineId); if (!tl) return
     const seg = tl.segments.find(s => s.transitId === transitId)
     if (seg) removeSegmentFromTimeline(timelineId, seg.order)
-    else addSegmentToTimeline(timelineId, transitId)
+    else if (!addSegmentToTimeline(timelineId, transitId)) {
+      setInteractionMessage('该班次会覆盖方案中的现有事项，请先调整事项时间。')
+    } else {
+      setInteractionMessage('')
+    }
     setContextMenu(null)
   }
   const removeFromPlan = (timelineId: string, transitId: string) => {
@@ -575,10 +579,11 @@ export default function TimelineEditor() {
         className={`gantt-label${group.rowId ? ' gantt-label-editable' : ''}`}
         style={group.rowId ? { color } : undefined}
         onClick={() => { if (!group.rowId) return; setEditingRowId(group.rowId); setEditingRowName(group.label) }}
-        title={group.label}
+        title={`${group.label}：${group.transits.length} 个候选，每个方案选 1 班`}
       >
         {emoji && <span className="row-type-emoji">{emoji}</span>}
         {group.label}
+        {group.transits.length > 1 && <span className="row-choice-count">{group.transits.length} 选 1</span>}
       </span>
     )
   }

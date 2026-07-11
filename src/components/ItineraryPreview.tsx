@@ -220,7 +220,10 @@ export default function ItineraryPreview() {
                     <div key={idx}>
                       <div className={`event-row event-${event.type}`}>
                         <span className="event-icon">{EVENT_ICONS[event.type] ?? '•'}</span>
-                        <span className="event-time">{formatTime(event.time)}</span>
+                        <span className="event-time-range">
+                          <strong>{formatTime(event.time)}</strong>
+                          {event.endTime && <><span>→</span><strong>{formatTime(event.endTime)}</strong></>}
+                        </span>
                         <span className="event-desc">{event.description}</span>
                         {event.type === 'gap' && event.duration !== undefined && (
                           <span className="event-dur gap-quota" title={`可用配额 ${formatDuration(event.duration)}`}>

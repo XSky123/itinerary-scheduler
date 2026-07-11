@@ -10,6 +10,7 @@ coverage/
 .claude/
 .vite-dev*.log
 visual-*.png
+visual-*.html
 playwright-report/
 test-results/
 
