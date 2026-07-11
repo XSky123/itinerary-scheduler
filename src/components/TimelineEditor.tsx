@@ -143,7 +143,7 @@ export default function TimelineEditor() {
     createTimeline, deleteTimeline, renameTimeline,
     addSegmentToTimeline, removeSegmentFromTimeline,
     addRow, updateRow, removeRow,
-    setEditingTransitId, past, future, undo, redo,
+    setEditingTransitId, past, future, undo, redo, clearAll,
     addPlanEvent, removePlanEvent,
   } = useTimelineStore(state => ({
     transitsMap: state.transits,
@@ -165,6 +165,7 @@ export default function TimelineEditor() {
     future: state.future,
     undo: state.undo,
     redo: state.redo,
+    clearAll: state.clearAll,
     addPlanEvent: state.addPlanEvent,
     removePlanEvent: state.removePlanEvent,
   }), shallow)
@@ -343,6 +344,9 @@ export default function TimelineEditor() {
     preDragStateRef.current = {
       transits: transits.map(t => [t.id, t]),
       timelines: timelines.map(tl => [tl.id, tl]),
+      planEvents: Array.from(planEventsMap.entries()),
+      rows: [...rows],
+      selectedTimelineId,
     }
     dragRef.current = {
       entityId: transit.id, entityType: 'transit', action,
@@ -477,9 +481,12 @@ export default function TimelineEditor() {
     e.preventDefault()
     const delta = (e.key === 'ArrowLeft' ? -1 : 1) * SNAP_MS
     const state = useTimelineStore.getState()
-    const historyEntry = {
+    const historyEntry: HistoryEntry = {
       transits: Array.from(state.transits.entries()),
       timelines: Array.from(state.timelines.entries()),
+      planEvents: Array.from(state.planEvents.entries()),
+      rows: [...state.rows],
+      selectedTimelineId: state.selectedTimelineId,
     }
     const updated = state.updateTransit(transit.id, {
       departureTime: dayjs(transit.departureTime).add(delta, 'millisecond').toISOString(),
@@ -500,6 +507,12 @@ export default function TimelineEditor() {
     const seg = tl.segments.find(s => s.transitId === transitId)
     if (seg) removeSegmentFromTimeline(timelineId, seg.order)
     setContextMenu(null)
+  }
+
+  const handleClearAll = () => {
+    if (transits.length === 0 && timelines.length === 0 && planEvents.length === 0 && rows.length === 0) return
+    clearAll()
+    setInteractionMessage('已清空全部内容。点左边的 ↩ 或按 Ctrl+Z 就能撤销。')
   }
 
   // ── Plan lane right-click → add event block ───────────────────────────────
@@ -685,6 +698,9 @@ export default function TimelineEditor() {
         <div className="undo-redo-group">
           <button className="btn-undoredo" onClick={undo} disabled={past.length === 0} title="撤销 (Ctrl+Z)" aria-label="撤销">↩</button>
           <button className="btn-undoredo" onClick={redo} disabled={future.length === 0} title="恢复 (Ctrl+Y)" aria-label="恢复">↪</button>
+          <button className="btn-clear-all" onClick={handleClearAll}
+            disabled={transits.length === 0 && timelines.length === 0 && planEvents.length === 0 && rows.length === 0}
+            title="清空全部内容（可以撤销）">一键清空</button>
         </div>
         <form className="plan-create-form" onSubmit={handleCreate}>
           <input type="text" placeholder={`计划 ${timelines.length + 1}`} value={newName} onChange={e => setNewName(e.target.value)} />

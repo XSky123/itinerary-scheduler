@@ -8,8 +8,13 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>行程安排工具</h1>
-        <p>约束驱动的拖拽排程</p>
+        <div>
+          <h1>行程安排工具</h1>
+          <p>约束驱动的拖拽排程</p>
+        </div>
+        <a className="tutorial-link"
+          href="https://github.com/XSky123/itinerary-scheduler/blob/main/docs/tutorial.md"
+          target="_blank" rel="noreferrer">📖 使用教程</a>
       </header>
       <div className="app-layout">
         <TransitLibrary />

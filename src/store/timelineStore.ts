@@ -17,6 +17,9 @@ export interface GanttRow {
 export type HistoryEntry = {
   transits: [string, TransitOption][];
   timelines: [string, Timeline][];
+  planEvents: [string, PlanEventBlock][];
+  rows: GanttRow[];
+  selectedTimelineId: string | null;
 };
 
 interface TimelineStore {
@@ -60,6 +63,7 @@ interface TimelineStore {
   undo: () => void;
   redo: () => void;
   pushHistoryEntry: (entry: HistoryEntry) => void;
+  clearAll: () => void;
 
   // 计划事项块
   addPlanEvent: (ev: PlanEventBlock) => void;
@@ -90,6 +94,62 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   timezone: 'Asia/Shanghai',
 };
+
+function createSampleState() {
+  const date = dayjs().format('YYYY-MM-DD');
+  const at = (time: string) => `${date}T${time}:00`;
+  const createdAt = new Date().toISOString();
+  const rail: TransitOption = {
+    id: 'sample-transit-rail',
+    type: 'train',
+    name: 'JR 花咲线：钏路 → 根室',
+    departureTime: at('09:00'),
+    arrivalTime: at('11:30'),
+    duration: 150,
+    category: 'sample-row-rail',
+    notes: '演示时间，出发前请按实际时刻表修改。',
+  };
+  const bus: TransitOption = {
+    id: 'sample-transit-bus',
+    type: 'bus',
+    name: '根室交通：根室站前 → 纳沙布岬',
+    departureTime: at('12:00'),
+    arrivalTime: at('12:40'),
+    duration: 40,
+    category: 'sample-row-bus',
+    notes: '演示时间，出发前请按实际时刻表修改。',
+  };
+  const timeline: Timeline = {
+    id: 'sample-plan',
+    name: '根室：火车转公交（示例）',
+    segments: [
+      { transitId: rail.id, order: 0, validConnection: true },
+      { transitId: bus.id, order: 1, validConnection: true },
+    ],
+    isValid: true,
+    totalDuration: 220,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  const event: PlanEventBlock = {
+    id: 'sample-event-break',
+    timelineId: timeline.id,
+    startTime: at('11:35'),
+    endTime: at('11:55'),
+    label: '根室站休息',
+    notes: '示例事项',
+  };
+  return {
+    transits: new Map([[rail.id, rail], [bus.id, bus]]),
+    timelines: new Map([[timeline.id, timeline]]),
+    planEvents: new Map([[event.id, event]]),
+    rows: [
+      { id: 'sample-row-rail', name: '火车' },
+      { id: 'sample-row-bus', name: '公交' },
+    ],
+    selectedTimelineId: timeline.id,
+  };
+}
 
 function revalidateTimelineSegments(
   timeline: Timeline,
@@ -146,12 +206,17 @@ function transitOverlapsPlanEvent(
 export const useTimelineStore = create<TimelineStore>()(
   persist(
     (set, get) => {
-      /** Save current transits+timelines to undo stack */
+      const sample = createSampleState();
+
+      /** Save all editable schedule data to the undo stack. */
       const pushHistory = () => {
         const s = get();
         const entry: HistoryEntry = {
           transits: Array.from(s.transits.entries()),
           timelines: Array.from(s.timelines.entries()),
+          planEvents: Array.from(s.planEvents.entries()),
+          rows: [...s.rows],
+          selectedTimelineId: s.selectedTimelineId,
         };
         set(st => ({ past: [...st.past.slice(-49), entry], future: [] }));
       };
@@ -173,12 +238,12 @@ export const useTimelineStore = create<TimelineStore>()(
       };
 
       return {
-        transits: new Map(),
-        timelines: new Map(),
-        planEvents: new Map(),
-        rows: [],
+        transits: sample.transits,
+        timelines: sample.timelines,
+        planEvents: sample.planEvents,
+        rows: sample.rows,
         config: DEFAULT_CONFIG,
-        selectedTimelineId: null,
+        selectedTimelineId: sample.selectedTimelineId,
         editingTransitId: null,
         formPrefill: null,
         past: [],
@@ -391,6 +456,9 @@ export const useTimelineStore = create<TimelineStore>()(
           const current: HistoryEntry = {
             transits: Array.from(state.transits.entries()),
             timelines: Array.from(state.timelines.entries()),
+            planEvents: Array.from(state.planEvents.entries()),
+            rows: [...state.rows],
+            selectedTimelineId: state.selectedTimelineId,
           };
           const prevMap = new Map(prev.transits);
           const prefill = diffTransit(state.transits, prevMap);
@@ -399,6 +467,9 @@ export const useTimelineStore = create<TimelineStore>()(
             future: [current, ...state.future.slice(0, 49)],
             transits: new Map(prev.transits),
             timelines: new Map(prev.timelines),
+            planEvents: new Map(prev.planEvents),
+            rows: [...prev.rows],
+            selectedTimelineId: prev.selectedTimelineId,
             formPrefill: prefill,
           });
         },
@@ -410,6 +481,9 @@ export const useTimelineStore = create<TimelineStore>()(
           const current: HistoryEntry = {
             transits: Array.from(state.transits.entries()),
             timelines: Array.from(state.timelines.entries()),
+            planEvents: Array.from(state.planEvents.entries()),
+            rows: [...state.rows],
+            selectedTimelineId: state.selectedTimelineId,
           };
           const nextMap = new Map(next.transits);
           const prefill = diffTransit(state.transits, nextMap);
@@ -418,12 +492,31 @@ export const useTimelineStore = create<TimelineStore>()(
             future: state.future.slice(1),
             transits: new Map(next.transits),
             timelines: new Map(next.timelines),
+            planEvents: new Map(next.planEvents),
+            rows: [...next.rows],
+            selectedTimelineId: next.selectedTimelineId,
             formPrefill: prefill,
           });
         },
 
         pushHistoryEntry: (entry: HistoryEntry) => {
           set(st => ({ past: [...st.past.slice(-49), entry], future: [] }));
+        },
+
+        clearAll: () => {
+          const state = get();
+          if (state.transits.size === 0 && state.timelines.size === 0 &&
+              state.planEvents.size === 0 && state.rows.length === 0) return;
+          pushHistory();
+          set({
+            transits: new Map(),
+            timelines: new Map(),
+            planEvents: new Map(),
+            rows: [],
+            selectedTimelineId: null,
+            editingTransitId: null,
+            formPrefill: null,
+          });
         },
 
         // 配置

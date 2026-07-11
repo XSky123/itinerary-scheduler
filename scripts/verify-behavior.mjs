@@ -23,6 +23,13 @@ try {
   const { exportAsHTML } = await server.ssrLoadModule('/src/lib/scheduler.ts')
   const initial = useTimelineStore.getState()
 
+  // A brand-new browser receives the editable Nemuro train-to-bus sample.
+  assert.equal(initial.transits.has('sample-transit-rail'), true)
+  assert.equal(initial.transits.has('sample-transit-bus'), true)
+  assert.equal(initial.timelines.has('sample-plan'), true)
+  assert.equal(initial.planEvents.has('sample-event-break'), true)
+  assert.equal(initial.selectedTimelineId, 'sample-plan')
+
   const flight = {
     id: 'flight',
     type: 'flight',
@@ -65,6 +72,7 @@ try {
     planEvents: new Map([['event', event]]),
     rows: [],
     config: initial.config,
+    selectedTimelineId: 'plan',
     past: [],
     future: [],
   })
@@ -117,6 +125,19 @@ try {
   assert.match(exported, /事项/)
   assert.match(exported, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   assert.doesNotMatch(exported, /<script>alert\(1\)<\/script>/)
+
+  // One-click clear removes every editable collection, and one undo restores it all.
+  useTimelineStore.getState().clearAll()
+  assert.equal(useTimelineStore.getState().transits.size, 0)
+  assert.equal(useTimelineStore.getState().timelines.size, 0)
+  assert.equal(useTimelineStore.getState().planEvents.size, 0)
+  assert.deepEqual(useTimelineStore.getState().rows, [])
+  assert.equal(useTimelineStore.getState().selectedTimelineId, null)
+  useTimelineStore.getState().undo()
+  assert.equal(useTimelineStore.getState().transits.size, 3)
+  assert.equal(useTimelineStore.getState().timelines.has('plan'), true)
+  assert.equal(useTimelineStore.getState().planEvents.has('event'), true)
+  assert.equal(useTimelineStore.getState().selectedTimelineId, 'plan')
 
   console.log('Behavior verification passed')
 } finally {
