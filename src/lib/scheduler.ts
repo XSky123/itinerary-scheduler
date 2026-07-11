@@ -64,18 +64,35 @@ export function generateItinerary(
     }
   }
 
+  // Keep the preview aligned with the editable plan lanes: custom events may
+  // also live before the first transit or after the last one.
+  if (startTime && endTime) {
+    const dayStart = dayjs(startTime).startOf('day').add(7, 'hour');
+    const dayEnd = dayjs(startTime).startOf('day').add(23, 'hour');
+    const firstDeparture = dayjs(startTime);
+    const lastArrival = dayjs(endTime);
+    const leadingGap = firstDeparture.diff(dayStart, 'minute');
+    const trailingGap = dayEnd.diff(lastArrival, 'minute');
+    if (leadingGap > 0) {
+      events.push({ time: dayStart.toISOString(), type: 'gap', description: '出发前时间', duration: leadingGap });
+    }
+    if (trailingGap > 0) {
+      events.push({ time: lastArrival.toISOString(), type: 'gap', description: '到达后时间', duration: trailingGap });
+    }
+  }
+
   const startTimeDayjs = dayjs(startTime);
   const endTimeDayjs = dayjs(endTime);
   const totalDuration = endTimeDayjs.diff(startTimeDayjs, 'minute');
 
   return {
-    id: `itinerary-${Date.now()}`,
+    id: `itinerary-${timeline.id}`,
     timelineId: timeline.id,
     events: events.sort((a, b) => dayjs(a.time).diff(dayjs(b.time))),
     startTime,
     endTime,
     totalDuration,
-    createdAt: dayjs().toISOString(),
+    createdAt: timeline.updatedAt,
   };
 }
 
@@ -112,9 +129,9 @@ export function exportAsCSV(itinerary: Itinerary): string {
   
   // 头部信息
   lines.push(`时间表 - ${dayjs(itinerary.startTime).format('YYYY-MM-DD')}`);
-  lines.push(`开始时间,${formatTime(itinerary.startTime, 'HH:mm')}`);
-  lines.push(`结束时间,${formatTime(itinerary.endTime, 'HH:mm')}`);
-  lines.push(`总时长,${formatDuration(itinerary.totalDuration)}`);
+  lines.push(`开始时间,${csvCell(formatTime(itinerary.startTime, 'HH:mm'))}`);
+  lines.push(`结束时间,${csvCell(formatTime(itinerary.endTime, 'HH:mm'))}`);
+  lines.push(`总时长,${csvCell(formatDuration(itinerary.totalDuration))}`);
   lines.push(''); // 空行
   
   // 事件表头
@@ -127,10 +144,15 @@ export function exportAsCSV(itinerary: Itinerary): string {
     const description = event.description;
     const duration = event.duration ?? '';
     
-    lines.push(`${time},${type},${description},${duration}`);
+    lines.push([time, type, description, duration].map(csvCell).join(','));
   }
   
   return lines.join('\n');
+}
+
+function csvCell(value: string | number): string {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 /**

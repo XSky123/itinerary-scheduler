@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import dayjs from 'dayjs'
+import { shallow } from 'zustand/shallow'
 import { useTimelineStore } from '../store/timelineStore'
 import { generateItinerary, formatTime, formatDuration, exportAsCSV } from '../lib/scheduler'
 import type { Timeline, ItineraryEvent, PlanEventBlock } from '../lib/models'
@@ -40,30 +41,46 @@ function sortedTimeline(timeline: Timeline, transitMap: Map<string, { departureT
 
 export default function ItineraryPreview() {
   const {
-    getAllTimelines, getAllTransits, selectedTimelineId, selectTimeline,
-    addPlanEvent, updatePlanEvent, removePlanEvent, getPlanEventsByTimeline,
-  } = useTimelineStore()
+    timelinesMap, transitsMap, planEventsMap, selectedTimelineId, selectTimeline,
+    addPlanEvent, updatePlanEvent, removePlanEvent,
+  } = useTimelineStore(state => ({
+    timelinesMap: state.timelines,
+    transitsMap: state.transits,
+    planEventsMap: state.planEvents,
+    selectedTimelineId: state.selectedTimelineId,
+    selectTimeline: state.selectTimeline,
+    addPlanEvent: state.addPlanEvent,
+    updatePlanEvent: state.updatePlanEvent,
+    removePlanEvent: state.removePlanEvent,
+  }), shallow)
 
   const [eventDrafts, setEventDrafts] = useState<Record<string, EventDraft>>({})
   const [eventErrors, setEventErrors] = useState<Record<string, string>>({})
 
-  const timelines = getAllTimelines()
-  const transitMap = new Map(getAllTransits().map(t => [t.id, t]))
+  const timelines = useMemo(() => Array.from(timelinesMap.values()), [timelinesMap])
+  const transitMap = transitsMap
 
   const activeTimeline =
     (selectedTimelineId ? timelines.find(t => t.id === selectedTimelineId) : null) ??
     timelines[0] ?? null
 
-  const itinerary =
+  const itinerary = useMemo(() =>
     activeTimeline && activeTimeline.segments.length > 0
       ? generateItinerary(sortedTimeline(activeTimeline, transitMap), transitMap)
-      : null
+      : null, [activeTimeline, transitMap])
+
+  const activePlanEvents = useMemo(() => {
+    if (!activeTimeline) return []
+    return Array.from(planEventsMap.values())
+      .filter(event => event.timelineId === activeTimeline.id)
+      .sort((a, b) => dayjs(a.startTime).diff(dayjs(b.startTime)))
+  }, [activeTimeline, planEventsMap])
 
   const getEventsInGap = (gapEvent: ItineraryEvent): PlanEventBlock[] => {
     if (!activeTimeline || gapEvent.type !== 'gap' || gapEvent.duration === undefined) return []
     const gapStartMs = dayjs(gapEvent.time).valueOf()
     const gapEndMs = gapStartMs + gapEvent.duration * 60000
-    return getPlanEventsByTimeline(activeTimeline.id)
+    return activePlanEvents
       .filter(ev => dayjs(ev.startTime).valueOf() >= gapStartMs && dayjs(ev.startTime).valueOf() < gapEndMs)
       .sort((a, b) => dayjs(a.startTime).diff(dayjs(b.startTime)))
   }
@@ -125,6 +142,11 @@ export default function ItineraryPreview() {
       startTime: dayjs(`${day}T${draft.start}`).toISOString(),
       endTime: dayjs(`${day}T${draft.end}`).toISOString(),
       notes: draft.notes.trim() || undefined,
+    })
+    setEventDrafts(prev => {
+      const next = { ...prev }
+      delete next[ev.id]
+      return next
     })
   }
 

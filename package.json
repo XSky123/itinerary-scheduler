@@ -1,7 +1,16 @@
 {
   "name": "itinerary-scheduler",
-  "version": "1.1.3",
-  "description": "约束驱动的行程规划工具 - WebApp 拖拽应用",
+  "version": "1.2.0",
+  "description": "约束驱动的可视化行程排程工具",
+  "license": "MIT",
+  "homepage": "https://xsky123.github.io/itinerary-scheduler/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xsky123/itinerary-scheduler.git"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,23 +18,21 @@
     "build:single": "vite build --logLevel error",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "test": "node scripts/verify-behavior.mjs",
+    "check": "tsc --noEmit && node scripts/verify-behavior.mjs && vite build --logLevel error"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.1.0",
-    "@dnd-kit/sortable": "^7.0.2",
-    "@dnd-kit/utilities": "^3.2.1",
     "dayjs": "^1.11.10",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "vite-plugin-singlefile": "^2.3.2",
+    "vite-plugin-singlefile": "^2.3.3",
     "zustand": "^4.4.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^5.2.0",
     "typescript": "^5.3.3",
-    "vite": "^5.0.8"
+    "vite": "^7.3.6"
   }
 }

@@ -34,7 +34,7 @@ interface TimelineStore {
 
   // 班次管理
   addTransit: (transit: TransitOption) => void;
-  updateTransit: (id: string, transit: Partial<TransitOption>) => void;
+  updateTransit: (id: string, transit: Partial<TransitOption>) => boolean;
   removeTransit: (id: string) => void;
   getTransit: (id: string) => TransitOption | undefined;
 
@@ -123,6 +123,26 @@ function revalidateTimelineSegments(
   };
 }
 
+function transitOverlapsPlanEvent(
+  transitId: string,
+  candidate: TransitOption,
+  timelines: Map<string, Timeline>,
+  planEvents: Map<string, PlanEventBlock>
+): boolean {
+  const start = dayjs(candidate.departureTime).valueOf();
+  const end = dayjs(candidate.arrivalTime).valueOf();
+  for (const timeline of timelines.values()) {
+    if (!timeline.segments.some(segment => segment.transitId === transitId)) continue;
+    for (const event of planEvents.values()) {
+      if (event.timelineId !== timeline.id) continue;
+      const eventStart = dayjs(event.startTime).valueOf();
+      const eventEnd = dayjs(event.endTime).valueOf();
+      if (start < eventEnd && end > eventStart) return true;
+    }
+  }
+  return false;
+}
+
 export const useTimelineStore = create<TimelineStore>()(
   persist(
     (set, get) => {
@@ -198,11 +218,16 @@ export const useTimelineStore = create<TimelineStore>()(
         },
 
         updateTransit: (id: string, updates: Partial<TransitOption>) => {
-          set((state) => {
-            const transit = state.transits.get(id);
-            if (!transit) return state;
+          const current = get();
+          const transit = current.transits.get(id);
+          if (!transit) return false;
+          const updatedTransit = { ...transit, ...updates };
+          if (
+            (updates.departureTime !== undefined || updates.arrivalTime !== undefined) &&
+            transitOverlapsPlanEvent(id, updatedTransit, current.timelines, current.planEvents)
+          ) return false;
 
-            const updatedTransit = { ...transit, ...updates };
+          set((state) => {
             const newTransits = new Map(state.transits);
             newTransits.set(id, updatedTransit);
 
@@ -216,6 +241,7 @@ export const useTimelineStore = create<TimelineStore>()(
 
             return { transits: newTransits, timelines: newTimelines };
           });
+          return true;
         },
 
         removeTransit: (id: string) => {
@@ -226,8 +252,18 @@ export const useTimelineStore = create<TimelineStore>()(
 
             const newTimelines = new Map(state.timelines);
             for (const [timelineId, timeline] of newTimelines) {
-              const newSegments = timeline.segments.filter(seg => seg.transitId !== id);
-              newTimelines.set(timelineId, { ...timeline, segments: newSegments });
+              if (!timeline.segments.some(seg => seg.transitId === id)) continue;
+              const newSegments = timeline.segments
+                .filter(seg => seg.transitId !== id)
+                .map((seg, order) => ({ ...seg, order }));
+              newTimelines.set(
+                timelineId,
+                revalidateTimelineSegments(
+                  { ...timeline, segments: newSegments },
+                  newTransits,
+                  state.config.bufferByTransitType
+                )
+              );
             }
 
             return { transits: newTransits, timelines: newTimelines };
@@ -255,8 +291,12 @@ export const useTimelineStore = create<TimelineStore>()(
           set((state) => {
             const newTimelines = new Map(state.timelines);
             newTimelines.delete(id);
+            const newPlanEvents = new Map(state.planEvents);
+            for (const [eventId, event] of newPlanEvents) {
+              if (event.timelineId === id) newPlanEvents.delete(eventId);
+            }
             const selectedId = state.selectedTimelineId === id ? null : state.selectedTimelineId;
-            return { timelines: newTimelines, selectedTimelineId: selectedId };
+            return { timelines: newTimelines, planEvents: newPlanEvents, selectedTimelineId: selectedId };
           });
         },
 

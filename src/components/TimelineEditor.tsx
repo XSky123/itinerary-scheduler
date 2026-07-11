@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import dayjs, { type Dayjs } from 'dayjs'
+import { shallow } from 'zustand/shallow'
 import { useTimelineStore } from '../store/timelineStore'
 import type { TransitOption, Timeline, TransitType, PlanEventBlock } from '../lib/models'
 import type { HistoryEntry } from '../store/timelineStore'
@@ -26,6 +27,16 @@ interface DragState {
   startDepMs: number
   startArrMs: number
   contentWidthPx: number
+  totalMs: number
+  minStart?: number
+  maxEnd?: number
+}
+
+interface DragPreview {
+  entityId: string
+  entityType: 'transit' | 'event'
+  startMs: number
+  endMs: number
 }
 
 interface ContextMenu {
@@ -52,15 +63,31 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function buildTimeRange(transits: TransitOption[]): { rangeStart: Dayjs; rangeEnd: Dayjs; totalMs: number } {
-  if (transits.length === 0) {
+function buildTimeRange(transits: TransitOption[], events: PlanEventBlock[]): { rangeStart: Dayjs; rangeEnd: Dayjs; totalMs: number } {
+  if (transits.length === 0 && events.length === 0) {
     const base = dayjs().startOf('day')
     return { rangeStart: base.add(8, 'hour'), rangeEnd: base.add(20, 'hour'), totalMs: 12 * 3600000 }
   }
-  const ts = transits.flatMap(t => [dayjs(t.departureTime).valueOf(), dayjs(t.arrivalTime).valueOf()])
+  const ts = [
+    ...transits.flatMap(t => [dayjs(t.departureTime).valueOf(), dayjs(t.arrivalTime).valueOf()]),
+    ...events.flatMap(event => [dayjs(event.startTime).valueOf(), dayjs(event.endTime).valueOf()]),
+  ]
   const rangeStart = dayjs(Math.min(...ts)).startOf('hour')
   const rangeEnd = dayjs(Math.max(...ts)).startOf('hour').add(1, 'hour')
   return { rangeStart, rangeEnd, totalMs: rangeEnd.diff(rangeStart) }
+}
+
+function layoutTransitLanes(transits: TransitOption[]) {
+  const laneEnds: number[] = []
+  const items = transits.map(transit => {
+    const start = dayjs(transit.departureTime).valueOf()
+    const end = dayjs(transit.arrivalTime).valueOf()
+    let lane = laneEnds.findIndex(laneEnd => laneEnd <= start)
+    if (lane === -1) lane = laneEnds.length
+    laneEnds[lane] = end
+    return { transit, lane }
+  })
+  return { items, laneCount: Math.max(1, laneEnds.length) }
 }
 
 function buildHourTicks(rangeStart: Dayjs, rangeEnd: Dayjs): Dayjs[] {
@@ -111,14 +138,36 @@ function GridLines({ hours, rangeStart, totalMs }: { hours: Dayjs[]; rangeStart:
 
 export default function TimelineEditor() {
   const {
-    getAllTransits, getAllTimelines, getAllRows,
+    transitsMap, timelinesMap, planEventsMap, rows,
     selectedTimelineId, selectTimeline,
     createTimeline, deleteTimeline, renameTimeline,
     addSegmentToTimeline, removeSegmentFromTimeline,
-    updateTransit, addRow, updateRow, removeRow,
-    setEditingTransitId, past, future, undo, redo, pushHistoryEntry,
-    addPlanEvent, updatePlanEvent, removePlanEvent, getPlanEventsByTimeline,
-  } = useTimelineStore()
+    addRow, updateRow, removeRow,
+    setEditingTransitId, past, future, undo, redo,
+    addPlanEvent, removePlanEvent,
+  } = useTimelineStore(state => ({
+    transitsMap: state.transits,
+    timelinesMap: state.timelines,
+    planEventsMap: state.planEvents,
+    rows: state.rows,
+    selectedTimelineId: state.selectedTimelineId,
+    selectTimeline: state.selectTimeline,
+    createTimeline: state.createTimeline,
+    deleteTimeline: state.deleteTimeline,
+    renameTimeline: state.renameTimeline,
+    addSegmentToTimeline: state.addSegmentToTimeline,
+    removeSegmentFromTimeline: state.removeSegmentFromTimeline,
+    addRow: state.addRow,
+    updateRow: state.updateRow,
+    removeRow: state.removeRow,
+    setEditingTransitId: state.setEditingTransitId,
+    past: state.past,
+    future: state.future,
+    undo: state.undo,
+    redo: state.redo,
+    addPlanEvent: state.addPlanEvent,
+    removePlanEvent: state.removePlanEvent,
+  }), shallow)
 
   const [newName, setNewName] = useState('')
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
@@ -127,34 +176,54 @@ export default function TimelineEditor() {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null)
   const [editingPlanName, setEditingPlanName] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
+  const [interactionMessage, setInteractionMessage] = useState('')
 
   const dragRef = useRef<DragState | null>(null)
   const dragMovedRef = useRef(false)
   const preDragStateRef = useRef<HistoryEntry | null>(null)
-  const dragParamsRef = useRef({ totalMs: 0, updateTransit, updatePlanEvent })
+  const dragPreviewRef = useRef<DragPreview | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
   const ganttRef = useRef<HTMLDivElement>(null)
 
-  const transits = getAllTransits()
-  const timelines = getAllTimelines()
-  const rows = getAllRows()
-  const groups = buildGroups(transits, rows)
-  const { rangeStart, rangeEnd, totalMs } = buildTimeRange(transits)
-  const hours = buildHourTicks(rangeStart, rangeEnd)
+  const transits = useMemo(() => Array.from(transitsMap.values()), [transitsMap])
+  const timelines = useMemo(() => Array.from(timelinesMap.values()), [timelinesMap])
+  const planEvents = useMemo(() => Array.from(planEventsMap.values()), [planEventsMap])
+  const transitById = useMemo(() => new Map(transits.map(t => [t.id, t])), [transits])
+  const eventsByTimeline = useMemo(() => {
+    const result = new Map<string, PlanEventBlock[]>()
+    for (const event of planEventsMap.values()) {
+      const list = result.get(event.timelineId) ?? []
+      list.push(event)
+      result.set(event.timelineId, list)
+    }
+    for (const list of result.values()) {
+      list.sort((a, b) => dayjs(a.startTime).diff(dayjs(b.startTime)))
+    }
+    return result
+  }, [planEventsMap])
+  const getPlanEvents = (timelineId: string) => eventsByTimeline.get(timelineId) ?? []
+  const groups = useMemo(() => buildGroups(transits, rows), [transits, rows])
+  const { rangeStart, rangeEnd, totalMs } = useMemo(() => buildTimeRange(transits, planEvents), [transits, planEvents])
+  const hours = useMemo(() => buildHourTicks(rangeStart, rangeEnd), [rangeStart, rangeEnd])
   const hourCount = Math.max(1, Math.ceil(totalMs / 3600000))
   const minGanttWidth = LABEL_COL_WIDTH + Math.max(600, hourCount * 90)
   const ganttContentWidth = minGanttWidth - LABEL_COL_WIDTH
 
-  dragParamsRef.current = { totalMs, updateTransit, updatePlanEvent }
+  const toLeftPct = (timeMs: number) => Math.max(0, ((timeMs - rangeStart.valueOf()) / totalMs) * 100)
+  const toWidthPct = (startMs: number, endMs: number) => Math.max(0.5, ((endMs - startMs) / totalMs) * 100)
 
-  const toLeftPct = (t: string) => Math.max(0, (dayjs(t).diff(rangeStart) / totalMs) * 100)
-  const toWidthPct = (d: string, a: string) => Math.max(0.5, (dayjs(a).diff(dayjs(d)) / totalMs) * 100)
-
-  const transitPlanMap = new Map<string, Timeline[]>()
-  for (const tl of timelines)
-    for (const seg of tl.segments) {
-      if (!transitPlanMap.has(seg.transitId)) transitPlanMap.set(seg.transitId, [])
-      transitPlanMap.get(seg.transitId)!.push(tl)
+  const transitPlanMap = useMemo(() => {
+    const result = new Map<string, Timeline[]>()
+    for (const tl of timelines) {
+      for (const seg of tl.segments) {
+        const list = result.get(seg.transitId) ?? []
+        list.push(tl)
+        result.set(seg.transitId, list)
+      }
     }
+    return result
+  }, [timelines])
 
   const planColor = (idx: number) => PLAN_COLORS[idx % PLAN_COLORS.length]
 
@@ -168,7 +237,7 @@ export default function TimelineEditor() {
     const tl = timelines.find(item => item.id === timelineId)
     if (!tl) return []
     return tl.segments
-      .map(s => transits.find(t => t.id === s.transitId))
+      .map(s => transitById.get(s.transitId))
       .filter(Boolean) as TransitOption[]
   }
 
@@ -203,7 +272,7 @@ export default function TimelineEditor() {
     const dayEnd = base.add(DAY_END_H, 'hour').valueOf()
     const occupied = [
       ...planTransits.map(t => ({ s: dayjs(t.departureTime).valueOf(), e: dayjs(t.arrivalTime).valueOf() })),
-      ...getPlanEventsByTimeline(timelineId).map(ev => ({ s: dayjs(ev.startTime).valueOf(), e: dayjs(ev.endTime).valueOf() })),
+      ...getPlanEvents(timelineId).map(ev => ({ s: dayjs(ev.startTime).valueOf(), e: dayjs(ev.endTime).valueOf() })),
     ].sort((a, b) => a.s - b.s)
     let gapStart = dayStart
     let gapEnd = dayEnd
@@ -215,7 +284,7 @@ export default function TimelineEditor() {
   }
 
   const getEventSlotBounds = (timelineId: string, eventId: string) => {
-    const currentEvent = getPlanEventsByTimeline(timelineId).find(ev => ev.id === eventId)
+    const currentEvent = getPlanEvents(timelineId).find(ev => ev.id === eventId)
     if (!currentEvent) return null
 
     const occupied: TimeSpan[] = [
@@ -223,7 +292,7 @@ export default function TimelineEditor() {
         start: dayjs(t.departureTime).valueOf(),
         end: dayjs(t.arrivalTime).valueOf(),
       })),
-      ...getPlanEventsByTimeline(timelineId)
+      ...getPlanEvents(timelineId)
         .filter(ev => ev.id !== eventId)
         .map(ev => ({
           start: dayjs(ev.startTime).valueOf(),
@@ -256,7 +325,7 @@ export default function TimelineEditor() {
     const slotLeftPx = ((slotStart - rangeStart.valueOf()) / totalMs) * ganttContentWidth
     const slotRightPx = ((slotEnd - rangeStart.valueOf()) / totalMs) * ganttContentWidth
     const slotWidthPx = Math.max(0, slotRightPx - slotLeftPx)
-    const visualWidthPx = Math.min(Math.max(rawWidthPx, MIN_EVENT_VISIBLE_PX), Math.max(MIN_EVENT_VISIBLE_PX, slotWidthPx))
+    const visualWidthPx = Math.max(1, Math.min(Math.max(rawWidthPx, Math.min(MIN_EVENT_VISIBLE_PX, slotWidthPx)), slotWidthPx))
     const visualLeftPx = clamp(rawLeftPx, slotLeftPx, Math.max(slotLeftPx, slotRightPx - visualWidthPx))
 
     return {
@@ -269,6 +338,7 @@ export default function TimelineEditor() {
   const startDrag = (e: React.MouseEvent, transit: TransitOption, action: DragState['action']) => {
     e.preventDefault(); e.stopPropagation()
     if (!ganttRef.current) return
+    setInteractionMessage('')
     dragMovedRef.current = false
     preDragStateRef.current = {
       transits: transits.map(t => [t.id, t]),
@@ -280,12 +350,15 @@ export default function TimelineEditor() {
       startDepMs: dayjs(transit.departureTime).valueOf(),
       startArrMs: dayjs(transit.arrivalTime).valueOf(),
       contentWidthPx: ganttRef.current.offsetWidth - LABEL_COL_WIDTH,
+      totalMs,
     }
   }
 
   const startEventDrag = (e: React.MouseEvent, ev: PlanEventBlock, action: DragState['action']) => {
     e.preventDefault(); e.stopPropagation()
     if (!ganttRef.current) return
+    const bounds = getEventSlotBounds(ev.timelineId, ev.id)
+    if (!bounds) return
     dragMovedRef.current = false
     dragRef.current = {
       entityId: ev.id, entityType: 'event', action,
@@ -293,53 +366,74 @@ export default function TimelineEditor() {
       startDepMs: dayjs(ev.startTime).valueOf(),
       startArrMs: dayjs(ev.endTime).valueOf(),
       contentWidthPx: ganttRef.current.offsetWidth - LABEL_COL_WIDTH,
+      totalMs,
+      ...bounds,
     }
   }
 
   useEffect(() => {
+    const publishPreview = () => {
+      dragFrameRef.current = null
+      setDragPreview(dragPreviewRef.current)
+    }
     const onMove = (e: MouseEvent) => {
       const ds = dragRef.current; if (!ds) return
-      if (Math.abs(e.clientX - ds.startClientX) > 3) dragMovedRef.current = true
-      const { totalMs: ms, updateTransit: updT, updatePlanEvent: updE } = dragParamsRef.current
-      const deltaMs = Math.round(((e.clientX - ds.startClientX) * ms / ds.contentWidthPx) / SNAP_MS) * SNAP_MS
+      if (Math.abs(e.clientX - ds.startClientX) <= 3) return
+      dragMovedRef.current = true
+      const deltaMs = Math.round(((e.clientX - ds.startClientX) * ds.totalMs / ds.contentWidthPx) / SNAP_MS) * SNAP_MS
       let dep = ds.startDepMs, arr = ds.startArrMs
       if (ds.action === 'move') { dep += deltaMs; arr += deltaMs }
       else if (ds.action === 'resize-l') dep = Math.min(ds.startDepMs + deltaMs, arr - SNAP_MS)
       else arr = Math.max(ds.startArrMs + deltaMs, dep + SNAP_MS)
-      if (ds.entityType === 'transit') {
-        updT(ds.entityId, {
-          departureTime: dayjs(dep).toISOString(),
-          arrivalTime: dayjs(arr).toISOString(),
-          duration: Math.round((arr - dep) / 60000),
-        })
-      } else {
-        const event = Array.from(useTimelineStore.getState().planEvents.values()).find(item => item.id === ds.entityId)
-        if (!event) return
-        const bounds = getEventSlotBounds(event.timelineId, event.id)
-        if (!bounds) return
+      if (ds.entityType === 'event') {
         const duration = ds.startArrMs - ds.startDepMs
         if (ds.action === 'move') {
-          dep = clamp(dep, bounds.minStart, bounds.maxEnd - duration)
+          dep = clamp(dep, ds.minStart!, ds.maxEnd! - duration)
           arr = dep + duration
         } else if (ds.action === 'resize-l') {
-          dep = clamp(dep, bounds.minStart, arr - SNAP_MS)
+          dep = clamp(dep, ds.minStart!, arr - SNAP_MS)
         } else {
-          arr = clamp(arr, dep + SNAP_MS, bounds.maxEnd)
+          arr = clamp(arr, dep + SNAP_MS, ds.maxEnd!)
         }
-        updE(ds.entityId, { startTime: dayjs(dep).toISOString(), endTime: dayjs(arr).toISOString() })
       }
+      const nextPreview = { entityId: ds.entityId, entityType: ds.entityType, startMs: dep, endMs: arr }
+      const previous = dragPreviewRef.current
+      if (previous?.startMs === dep && previous.endMs === arr && previous.entityId === ds.entityId) return
+      dragPreviewRef.current = nextPreview
+      if (dragFrameRef.current === null) dragFrameRef.current = requestAnimationFrame(publishPreview)
     }
     const onUp = () => {
-      if (dragRef.current?.entityType === 'transit' && dragMovedRef.current && preDragStateRef.current) {
-        pushHistoryEntry(preDragStateRef.current)
+      const ds = dragRef.current
+      const preview = dragPreviewRef.current
+      if (dragFrameRef.current !== null) {
+        cancelAnimationFrame(dragFrameRef.current)
+        dragFrameRef.current = null
+      }
+      if (ds && dragMovedRef.current && preview) {
+        const state = useTimelineStore.getState()
+        if (ds.entityType === 'transit') {
+          const updated = state.updateTransit(ds.entityId, {
+            departureTime: dayjs(preview.startMs).toISOString(),
+            arrivalTime: dayjs(preview.endMs).toISOString(),
+            duration: Math.round((preview.endMs - preview.startMs) / 60000),
+          })
+          if (updated && preDragStateRef.current) state.pushHistoryEntry(preDragStateRef.current)
+          if (!updated) setInteractionMessage('班次时间与计划事项重叠，已恢复原位置。')
+        } else {
+          state.updatePlanEvent(ds.entityId, {
+            startTime: dayjs(preview.startMs).toISOString(),
+            endTime: dayjs(preview.endMs).toISOString(),
+          })
+        }
       }
       preDragStateRef.current = null
+      dragPreviewRef.current = null
+      setDragPreview(null)
       dragRef.current = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -356,11 +450,43 @@ export default function TimelineEditor() {
   // ── Context menus ─────────────────────────────────────────────────────────
   const openCtx = (e: React.MouseEvent, transitId: string, fromPlanId?: string) => {
     e.preventDefault(); e.stopPropagation()
-    setContextMenu({ entityId: transitId, entityType: 'transit', x: e.clientX, y: e.clientY, fromPlanId })
+    setContextMenu({
+      entityId: transitId,
+      entityType: 'transit',
+      x: clamp(e.clientX, 8, Math.max(8, window.innerWidth - 210)),
+      y: clamp(e.clientY, 8, Math.max(8, window.innerHeight - 260)),
+      fromPlanId,
+    })
   }
   const openEventCtx = (e: React.MouseEvent, eventId: string) => {
     e.preventDefault(); e.stopPropagation()
-    setContextMenu({ entityId: eventId, entityType: 'event', x: e.clientX, y: e.clientY })
+    setContextMenu({
+      entityId: eventId,
+      entityType: 'event',
+      x: clamp(e.clientX, 8, Math.max(8, window.innerWidth - 210)),
+      y: clamp(e.clientY, 8, Math.max(8, window.innerHeight - 120)),
+    })
+  }
+  const handleTransitKeyDown = (e: React.KeyboardEvent, transit: TransitOption) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      setEditingTransitId(transit.id)
+      return
+    }
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const delta = (e.key === 'ArrowLeft' ? -1 : 1) * SNAP_MS
+    const state = useTimelineStore.getState()
+    const historyEntry = {
+      transits: Array.from(state.transits.entries()),
+      timelines: Array.from(state.timelines.entries()),
+    }
+    const updated = state.updateTransit(transit.id, {
+      departureTime: dayjs(transit.departureTime).add(delta, 'millisecond').toISOString(),
+      arrivalTime: dayjs(transit.arrivalTime).add(delta, 'millisecond').toISOString(),
+    })
+    if (updated) state.pushHistoryEntry(historyEntry)
+    else setInteractionMessage('班次时间与计划事项重叠，无法移动。')
   }
   const toggleInPlan = (timelineId: string, transitId: string) => {
     const tl = timelines.find(t => t.id === timelineId); if (!tl) return
@@ -446,7 +572,7 @@ export default function TimelineEditor() {
 
   // ── Event block rendering for a plan lane ────────────────────────────────
   const renderEventBlocksForPlan = (tl: Timeline, planTransits: TransitOption[]) => {
-    const evBlocks = getPlanEventsByTimeline(tl.id)
+    const evBlocks = getPlanEvents(tl.id)
     if (evBlocks.length === 0) return null
     const gaps = computeTransitGaps(planTransits)
 
@@ -466,25 +592,30 @@ export default function TimelineEditor() {
 
       if (!shouldGroup) {
         // Render individually
-        return gapEvents.map(ev => (
-          <div key={ev.id}
-            className="gantt-block plan-event-block"
+        return gapEvents.map(ev => {
+          const startMs = dragPreview?.entityType === 'event' && dragPreview.entityId === ev.id
+            ? dragPreview.startMs : dayjs(ev.startTime).valueOf()
+          const endMs = dragPreview?.entityType === 'event' && dragPreview.entityId === ev.id
+            ? dragPreview.endMs : dayjs(ev.endTime).valueOf()
+          const isCompact = ((endMs - startMs) / totalMs) * ganttContentWidth < 42
+          return <div key={ev.id}
+            className={`gantt-block plan-event-block${isCompact ? ' compact' : ''}`}
             style={getEventVisualStyle(
-              dayjs(ev.startTime).valueOf(),
-              dayjs(ev.endTime).valueOf(),
+              startMs,
+              endMs,
               gap.start,
               gap.end,
             )}
             onMouseDown={e => startEventDrag(e, ev, 'move')}
             onContextMenu={e => openEventCtx(e, ev.id)}
-            title={`${ev.label}\n${dayjs(ev.startTime).format('HH:mm')}–${dayjs(ev.endTime).format('HH:mm')}\n右键删除`}
+            title={`${ev.label}\n${dayjs(startMs).format('HH:mm')}–${dayjs(endMs).format('HH:mm')}\n右键删除`}
           >
             <div className="resize-handle resize-l" onMouseDown={e => { e.stopPropagation(); startEventDrag(e, ev, 'resize-l') }} />
             <div className="resize-handle resize-r" onMouseDown={e => { e.stopPropagation(); startEventDrag(e, ev, 'resize-r') }} />
             <div className="block-name">{ev.label}</div>
-            <div className="block-time">{dayjs(ev.startTime).format('HH:mm')}–{dayjs(ev.endTime).format('HH:mm')}</div>
+            <div className="block-time">{dayjs(startMs).format('HH:mm')}–{dayjs(endMs).format('HH:mm')}</div>
           </div>
-        ))
+        })
       }
 
       // Grouped
@@ -531,7 +662,7 @@ export default function TimelineEditor() {
   }
 
   const getPlanRowExtraHeight = (tl: Timeline, planTransits: TransitOption[]) => {
-    const evBlocks = getPlanEventsByTimeline(tl.id)
+    const evBlocks = getPlanEvents(tl.id)
     if (evBlocks.length === 0) return 0
     const gaps = computeTransitGaps(planTransits)
     let maxExtra = 0
@@ -572,8 +703,10 @@ export default function TimelineEditor() {
           {/* Source rows */}
           {groups.map(group => {
             const rowColor = getRowColor(group.colorIndex)
+            const laneLayout = layoutTransitLanes(group.transits)
             return (
-              <div key={group.rowId ?? '__uncategorized'} className="gantt-row">
+              <div key={group.rowId ?? '__uncategorized'} className="gantt-row"
+                style={{ minHeight: Math.max(54, laneLayout.laneCount * 46 + 8) }}>
                 <div className="gantt-label-col gantt-label-col-source">
                   {renderRowLabel(group)}
                   {group.rowId && (
@@ -582,32 +715,40 @@ export default function TimelineEditor() {
                 </div>
                 <div className="gantt-row-content">
                   <GridLines hours={hours} rangeStart={rangeStart} totalMs={totalMs} />
-                  {group.transits.map(transit => {
+                  {laneLayout.items.map(({ transit, lane }) => {
                     const isInPlan = (transitPlanMap.get(transit.id) ?? []).length > 0
                     const bgAlpha = isInPlan ? 0.32 : 0.15
                     const borderAlpha = isInPlan ? 0.85 : 0.55
+                    const startMs = dragPreview?.entityType === 'transit' && dragPreview.entityId === transit.id
+                      ? dragPreview.startMs : dayjs(transit.departureTime).valueOf()
+                    const endMs = dragPreview?.entityType === 'transit' && dragPreview.entityId === transit.id
+                      ? dragPreview.endMs : dayjs(transit.arrivalTime).valueOf()
                     return (
                       <div
                         key={transit.id}
                         className={`gantt-block${isInPlan ? ' in-plan' : ''}`}
                         style={{
-                          left: `${toLeftPct(transit.departureTime)}%`,
-                          width: `${toWidthPct(transit.departureTime, transit.arrivalTime)}%`,
+                          left: `${toLeftPct(startMs)}%`,
+                          width: `${toWidthPct(startMs, endMs)}%`,
                           background: hexToRgba(rowColor, bgAlpha),
                           borderColor: hexToRgba(rowColor, borderAlpha),
                           borderStyle: isInPlan ? 'dashed' : 'solid',
                           color: rowColor,
+                          top: `${6 + lane * 46}px`,
+                          bottom: 'auto',
+                          height: '42px',
                         }}
                         onMouseDown={e => startDrag(e, transit, 'move')}
                         onClick={() => { if (!dragMovedRef.current) setEditingTransitId(transit.id) }}
                         onContextMenu={e => openCtx(e, transit.id)}
-                        title={[transit.name, `${dayjs(transit.departureTime).format('HH:mm')} → ${dayjs(transit.arrivalTime).format('HH:mm')}`, formatDuration(transit.duration), transit.notes, '点击在左栏编辑 · 拖拽移动 · 右键管理计划'].filter(Boolean).join('\n')}
+                        onKeyDown={e => handleTransitKeyDown(e, transit)}
+                        title={[transit.name, `${dayjs(startMs).format('HH:mm')} → ${dayjs(endMs).format('HH:mm')}`, formatDuration(Math.round((endMs - startMs) / 60000)), transit.notes, '点击或按 Enter 编辑 · 拖拽/方向键移动 · 右键管理计划'].filter(Boolean).join('\n')}
                         role="button" tabIndex={0} aria-label={transit.name}
                       >
                         <div className="resize-handle resize-l" onMouseDown={e => { e.stopPropagation(); startDrag(e, transit, 'resize-l') }} />
                         <div className="resize-handle resize-r" onMouseDown={e => { e.stopPropagation(); startDrag(e, transit, 'resize-r') }} />
                         <div className="block-name">{transit.name}</div>
-                        <div className="block-time">{dayjs(transit.departureTime).format('HH:mm')}–{dayjs(transit.arrivalTime).format('HH:mm')}</div>
+                        <div className="block-time">{dayjs(startMs).format('HH:mm')}–{dayjs(endMs).format('HH:mm')}</div>
                       </div>
                     )
                   })}
@@ -631,7 +772,7 @@ export default function TimelineEditor() {
               </div>
               {timelines.map((tl, idx) => {
                 const color = planColor(idx)
-                const planTransits = tl.segments.map(s => transits.find(t => t.id === s.transitId)).filter(Boolean) as TransitOption[]
+                const planTransits = tl.segments.map(s => transitById.get(s.transitId)).filter(Boolean) as TransitOption[]
                 const isSelected = selectedTimelineId === tl.id
                 const extraHeight = getPlanRowExtraHeight(tl, planTransits)
                 return (
@@ -670,22 +811,26 @@ export default function TimelineEditor() {
                         const rowName = transit.category ? rows.find(r => r.id === transit.category)?.name : null
                         const segment = tl.segments.find(s => s.transitId === transit.id)
                         const isConflict = segment ? !segment.validConnection : false
+                        const startMs = dragPreview?.entityType === 'transit' && dragPreview.entityId === transit.id
+                          ? dragPreview.startMs : dayjs(transit.departureTime).valueOf()
+                        const endMs = dragPreview?.entityType === 'transit' && dragPreview.entityId === transit.id
+                          ? dragPreview.endMs : dayjs(transit.arrivalTime).valueOf()
                         return (
                           <div
                             key={transit.id}
                             className={`gantt-block plan-block reserved${isConflict ? ' conflict' : ''}`}
                             style={{
-                              left: `${toLeftPct(transit.departureTime)}%`,
-                              width: `${toWidthPct(transit.departureTime, transit.arrivalTime)}%`,
+                              left: `${toLeftPct(startMs)}%`,
+                              width: `${toWidthPct(startMs, endMs)}%`,
                               '--plan-color': blockColor,
                             } as React.CSSProperties}
-                            title={[rowName, transit.name, `${dayjs(transit.departureTime).format('HH:mm')} → ${dayjs(transit.arrivalTime).format('HH:mm')}`, transit.notes, '左键在左栏编辑 · 右键移出计划'].filter(Boolean).join('\n')}
+                            title={[rowName, transit.name, `${dayjs(startMs).format('HH:mm')} → ${dayjs(endMs).format('HH:mm')}`, transit.notes, '左键在左栏编辑 · 右键移出计划'].filter(Boolean).join('\n')}
                             onClick={() => setEditingTransitId(transit.id)}
                             onContextMenu={e => openCtx(e, transit.id, tl.id)}
                           >
                             {rowName && <div className="block-row-name">{rowName}</div>}
                             {transit.name && <div className="block-name">{transit.name}</div>}
-                            <div className="block-time">{dayjs(transit.departureTime).format('HH:mm')}–{dayjs(transit.arrivalTime).format('HH:mm')}</div>
+                            <div className="block-time">{dayjs(startMs).format('HH:mm')}–{dayjs(endMs).format('HH:mm')}</div>
                           </div>
                         )
                       })}
@@ -705,6 +850,7 @@ export default function TimelineEditor() {
 
       <div className="plan-footer">
         <span className="plan-footer-hint">点击块在左栏编辑 · 拖拽移动 · 右键管理计划 · 计划行空白处右键添加事项 · Ctrl+Z 撤销</span>
+        {interactionMessage && <span className="plan-footer-error" role="status">{interactionMessage}</span>}
         {selectedTimelineId && (
           <><span className="plan-footer-sep">｜</span>
           <span className="plan-footer-name">{timelines.find(t => t.id === selectedTimelineId)?.name}<span style={{ fontWeight: 400, color: '#9ca3af' }}> 预览中</span></span></>

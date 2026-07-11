@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import dayjs from 'dayjs'
+import { shallow } from 'zustand/shallow'
 import { useTimelineStore } from '../store/timelineStore'
 import type { TransitOption, TransitType } from '../lib/models'
 import { getRowColor } from '../lib/rowColors'
@@ -54,7 +55,7 @@ function TransitCard({
   rows: { id: string; name: string }[]
   rowColor?: string
   onStartEdit: () => void
-  onSave: (updates: Partial<TransitOption>) => void
+  onSave: (updates: Partial<TransitOption>) => boolean
   onCancel: () => void
   onRemove: () => void
 }) {
@@ -62,30 +63,34 @@ function TransitCard({
   const [depErr, setDepErr] = useState(false)
   const [arrErr, setArrErr] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const cardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (isEditing) {
       setFields(fieldsFromTransit(transit))
       setDepErr(false); setArrErr(false); setConfirmDelete(false)
+      setSaveError('')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing])
 
   const buildAndSave = (f: EditFields) => {
     const dep = parseTimeStr(f.depTime), arr = parseTimeStr(f.arrTime)
-    setDepErr(!dep); setArrErr(!arr)
-    if (!dep || !arr) return
+    const invalidRange = Boolean(dep && arr && arr <= dep)
+    setDepErr(!dep); setArrErr(!arr || invalidRange)
+    if (!dep || !arr || invalidRange) return
     const departureTime = dayjs(`${f._date}T${dep}`).toISOString()
     const arrivalTime = dayjs(`${f._date}T${arr}`).toISOString()
     const finalName = f.name.trim() || `${TYPE_LABELS[f.type]} ${dayjs(departureTime).format('HH:mm')}`
-    onSave({
+    const saved = onSave({
       type: f.type, name: finalName,
       category: f.category || undefined,
       departureTime, arrivalTime,
       duration: dayjs(arrivalTime).diff(dayjs(departureTime), 'minute'),
       notes: f.notes.trim() || undefined,
     })
+    setSaveError(saved ? '' : '该时间与计划中的事项重叠，请先调整事项。')
   }
 
   const handleCardBlur = (e: React.FocusEvent) => {
@@ -130,6 +135,7 @@ function TransitCard({
           <div className="form-row">
             <input type="text" placeholder="备注（可选）" value={fields.notes} onChange={set('notes')} />
           </div>
+          {saveError && <div className="form-error" role="status">{saveError}</div>}
           <div className="form-row card-edit-actions">
             <button type="button" className="btn-primary" onClick={() => buildAndSave(fields)}>保存</button>
             <button type="button" className="btn-text" onClick={onCancel}>取消</button>
@@ -170,21 +176,30 @@ function TransitCard({
 
 export default function TransitLibrary() {
   const {
-    getAllTransits, getAllRows, addTransit, updateTransit, removeTransit,
+    transitsMap, rows, addTransit, updateTransit, removeTransit,
     editingTransitId, setEditingTransitId,
     formPrefill, setFormPrefill,
-  } = useTimelineStore()
+  } = useTimelineStore(state => ({
+    transitsMap: state.transits,
+    rows: state.rows,
+    addTransit: state.addTransit,
+    updateTransit: state.updateTransit,
+    removeTransit: state.removeTransit,
+    editingTransitId: state.editingTransitId,
+    setEditingTransitId: state.setEditingTransitId,
+    formPrefill: state.formPrefill,
+    setFormPrefill: state.setFormPrefill,
+  }), shallow)
 
-  const transits = getAllTransits()
-  const rows = getAllRows()
+  const transits = useMemo(() => Array.from(transitsMap.values()), [transitsMap])
 
-  const [filter, setFilter] = useState<string>(() => getAllRows()[0]?.id ?? 'all')
+  const [filter, setFilter] = useState<string>(() => rows[0]?.id ?? 'all')
   const [showForm, setShowForm] = useState(true)
   const [editId, setEditId] = useState<string | null>(null)
 
   const [type, setType] = useState<TransitType>(() => (localStorage.getItem('lastTransitType') as TransitType) ?? 'flight')
   const [name, setName] = useState('')
-  const [category, setCategory] = useState(() => getAllRows()[0]?.id ?? '')
+  const [category, setCategory] = useState(() => rows[0]?.id ?? '')
   const [depRaw, setDepRaw] = useState('08:00')
   const [arrRaw, setArrRaw] = useState('10:00')
   const [notes, setNotes] = useState('')
@@ -260,20 +275,21 @@ export default function TransitLibrary() {
     if (transit.category) setCategory(transit.category)
   }
 
-  const filtered = filter === 'all'
+  const filtered = useMemo(() => filter === 'all'
     ? [...transits].sort((a, b) => {
-        const td = dayjs(a.departureTime).diff(dayjs(b.departureTime))
-        return td !== 0 ? td : a.type.localeCompare(b.type)
-      })
+      const td = dayjs(a.departureTime).diff(dayjs(b.departureTime))
+      return td !== 0 ? td : a.type.localeCompare(b.type)
+    })
     : transits
-        .filter(t => t.category === filter)
-        .sort((a, b) => dayjs(a.departureTime).diff(dayjs(b.departureTime)))
+      .filter(t => t.category === filter)
+      .sort((a, b) => dayjs(a.departureTime).diff(dayjs(b.departureTime))), [filter, transits])
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault()
     const dep = parseTimeStr(depRaw), arr = parseTimeStr(arrRaw)
-    setDepErr(!dep); setArrErr(!arr)
-    if (!dep || !arr) return
+    const invalidRange = Boolean(dep && arr && arr <= dep)
+    setDepErr(!dep); setArrErr(!arr || invalidRange)
+    if (!dep || !arr || invalidRange) return
     const date = dayjs().format('YYYY-MM-DD')
     const departureTime = dayjs(`${date}T${dep}`).toISOString()
     const arrivalTime = dayjs(`${date}T${arr}`).toISOString()
@@ -362,7 +378,11 @@ export default function TransitLibrary() {
                 <TransitCard transit={transit} rows={rows} rowColor={rowColor}
                   isEditing={editId === transit.id}
                   onStartEdit={() => handleStartEdit(transit)}
-                  onSave={updates => { updateTransit(transit.id, updates); setEditId(null) }}
+                  onSave={updates => {
+                    const saved = updateTransit(transit.id, updates)
+                    if (saved) setEditId(null)
+                    return saved
+                  }}
                   onCancel={() => setEditId(null)}
                   onRemove={() => { if (editId === transit.id) setEditId(null); removeTransit(transit.id) }}
                 />
