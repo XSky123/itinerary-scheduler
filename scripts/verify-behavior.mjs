@@ -20,6 +20,7 @@ const server = await createServer({
 
 try {
   const { useTimelineStore } = await server.ssrLoadModule('/src/store/timelineStore.ts')
+  const { exportAsHTML } = await server.ssrLoadModule('/src/lib/scheduler.ts')
   const initial = useTimelineStore.getState()
 
   const flight = {
@@ -97,6 +98,25 @@ try {
     duration: 30,
   }), true)
   assert.equal(useTimelineStore.getState().timelines.get('plan').isValid, true)
+
+  const exported = exportAsHTML({
+    id: 'itinerary-plan',
+    timelineId: 'plan',
+    events: [{
+      time: '2026-07-11T08:00:00+09:00',
+      type: 'depart',
+      description: '出发 - <script>alert(1)</script>',
+    }],
+    startTime: '2026-07-11T08:00:00+09:00',
+    endTime: '2026-07-11T10:20:00+09:00',
+    totalDuration: 140,
+    createdAt: '2026-07-11T00:00:00+09:00',
+  }, [event], '推荐方案')
+  assert.match(exported, /^<!doctype html>/)
+  assert.match(exported, /推荐方案/)
+  assert.match(exported, /事项/)
+  assert.match(exported, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+  assert.doesNotMatch(exported, /<script>alert\(1\)<\/script>/)
 
   console.log('Behavior verification passed')
 } finally {

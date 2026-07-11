@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import dayjs from 'dayjs'
 import { shallow } from 'zustand/shallow'
 import { useTimelineStore } from '../store/timelineStore'
-import { generateItinerary, formatTime, formatDuration, exportAsCSV } from '../lib/scheduler'
+import { generateItinerary, formatTime, formatDuration, exportAsHTML } from '../lib/scheduler'
 import type { Timeline, ItineraryEvent, PlanEventBlock } from '../lib/models'
 
 const EVENT_ICONS: Record<string, string> = {
@@ -19,8 +19,8 @@ type EventDraft = {
   notes: string
 }
 
-function downloadCSV(content: string, filename: string) {
-  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' })
+function downloadHTML(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/html;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -309,12 +309,13 @@ export default function ItineraryPreview() {
               <button
                 className="btn-export"
                 onClick={() => {
-                  const csv = exportAsCSV(itinerary)
+                  const html = exportAsHTML(itinerary, activePlanEvents, activeTimeline.name || '行程单')
                   const date = dayjs(itinerary.startTime).format('YYYYMMDD')
-                  downloadCSV(csv, `行程_${date}.csv`)
+                  downloadHTML(html, `行程单_${date}.html`)
                 }}
+                title="下载排版好的 HTML，打开后可打印为 PDF"
               >
-                导出 CSV
+                导出精美行程单
               </button>
             </>
           )}

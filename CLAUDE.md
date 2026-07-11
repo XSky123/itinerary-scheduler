@@ -19,7 +19,7 @@ npm run preview
 - `src/components/ItineraryPreview.tsx`: generated itinerary and editable plan events.
 - `src/store/timelineStore.ts`: Zustand state, persistence, undo/redo, collision invariants.
 - `src/lib/validators.ts`: connection-buffer validation.
-- `src/lib/scheduler.ts`: itinerary generation and CSV export.
+- `src/lib/scheduler.ts`: itinerary generation and printable HTML export.
 
 All persisted data stays in localStorage under `itinerary-scheduler-v1`. Maps are serialized as entry arrays.
 
