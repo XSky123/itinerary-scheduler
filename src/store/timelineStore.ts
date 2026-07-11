@@ -65,6 +65,7 @@ interface TimelineStore {
   redo: () => void;
   pushHistoryEntry: (entry: HistoryEntry) => void;
   clearAll: () => void;
+  restoreDemo: () => void;
 
   // 计划事项块
   addPlanEvent: (ev: PlanEventBlock) => void;
@@ -96,66 +97,86 @@ const DEFAULT_CONFIG: AppConfig = {
   timezone: 'Asia/Shanghai',
 };
 
+function createEmptyTimeline(id = 'plan-default', name = '计划 1'): Timeline {
+  const now = new Date().toISOString();
+  return {
+    id, name, segments: [], isValid: true, totalDuration: 0,
+    createdAt: now, updatedAt: now,
+  };
+}
+
 function createSampleState() {
   const date = dayjs().format('YYYY-MM-DD');
   const at = (time: string) => `${date}T${time}:00`;
   const createdAt = new Date().toISOString();
-  const demoNote = '演示时间，不是实时时刻表；出发前请按官方信息修改。';
   const makeTransit = (
     id: string, type: TransitOption['type'], name: string,
-    departure: string, arrival: string, category: string
+    departure: string, arrival: string, category: string, notes: string
   ): TransitOption => ({
     id, type, name,
     departureTime: at(departure),
     arrivalTime: at(arrival),
     duration: dayjs(at(arrival)).diff(dayjs(at(departure)), 'minute'),
     category,
-    notes: demoNote,
+    notes,
   });
+  const jrNote = 'JR北海道官方时刻表（2026年7月号基准）；出发前请确认运转日和临时变更。';
+  const busNote = '根室交通官方纳沙布线时刻表（令和3年10月1日改定）。';
   const rails = [
-    makeTransit('sample-train-1', 'train', 'JR 花咲线 1：钏路 → 根室', '05:35', '08:05', 'sample-row-rail'),
-    makeTransit('sample-train-2', 'train', 'JR 快速はなさき：钏路 → 根室', '08:50', '11:20', 'sample-row-rail'),
-    makeTransit('sample-train-3', 'train', 'JR 花咲线 3：钏路 → 根室', '11:15', '13:45', 'sample-row-rail'),
-    makeTransit('sample-train-4', 'train', 'JR 花咲线 4：钏路 → 根室', '13:25', '15:55', 'sample-row-rail'),
-    makeTransit('sample-train-5', 'train', 'JR 花咲线 5：钏路 → 根室', '16:12', '18:42', 'sample-row-rail'),
+    makeTransit('sample-train-1', 'train', '9621D 地球探索鉄道号：钏路 → 根室', '08:21', '10:53', 'sample-row-rail', jrNote),
+    makeTransit('sample-train-2', 'train', '9623D ノサップ：钏路 → 根室', '11:13', '13:26', 'sample-row-rail', jrNote),
+    makeTransit('sample-train-3', 'train', '5625D 普通：钏路 → 根室', '13:40', '15:58', 'sample-row-rail', jrNote),
+    makeTransit('sample-train-4', 'train', '5627D 普通：钏路 → 根室', '16:04', '18:48', 'sample-row-rail', jrNote),
+    makeTransit('sample-train-5', 'train', '5629D 普通：钏路 → 根室', '19:40', '22:25', 'sample-row-rail', jrNote),
   ];
-  const buses = [
-    makeTransit('sample-bus-1', 'bus', '根室交通 1：根室站前 → 纳沙布岬', '08:20', '09:00', 'sample-row-bus'),
-    makeTransit('sample-bus-2', 'bus', '根室交通 2：根室站前 → 纳沙布岬', '10:10', '10:50', 'sample-row-bus'),
-    makeTransit('sample-bus-3', 'bus', '根室交通 3：根室站前 → 纳沙布岬', '12:00', '12:40', 'sample-row-bus'),
-    makeTransit('sample-bus-4', 'bus', '根室交通 4：根室站前 → 纳沙布岬', '14:15', '14:55', 'sample-row-bus'),
-    makeTransit('sample-bus-5', 'bus', '根室交通 5：根室站前 → 纳沙布岬', '16:10', '16:50', 'sample-row-bus'),
-    makeTransit('sample-bus-6', 'bus', '根室交通 6：根室站前 → 纳沙布岬', '17:50', '18:30', 'sample-row-bus'),
+  const outboundBuses = [
+    makeTransit('sample-bus-1', 'bus', '纳沙布线 1：根室站前总站 → 纳沙布岬', '06:40', '07:24', 'sample-row-bus', `${busNote}周六、周日、节假日及调休假日停运。`),
+    makeTransit('sample-bus-2', 'bus', '纳沙布线 2：根室站前总站 → 纳沙布岬', '08:20', '09:04', 'sample-row-bus', busNote),
+    makeTransit('sample-bus-3', 'bus', '纳沙布线 3：根室站前总站 → 纳沙布岬', '11:05', '11:49', 'sample-row-bus', busNote),
+    makeTransit('sample-bus-4', 'bus', '纳沙布线 4：根室站前总站 → 纳沙布岬', '13:35', '14:19', 'sample-row-bus', busNote),
+    makeTransit('sample-bus-5', 'bus', '纳沙布线 5：根室站前总站 → 纳沙布岬', '16:10', '16:54', 'sample-row-bus', busNote),
   ];
-  const selectedRail = rails[0];
-  const selectedBus = buses[0];
+  const returnBuses = [
+    makeTransit('sample-return-bus-1', 'bus', '纳沙布线 1：纳沙布岬 → 根室站前总站', '07:29', '08:13', 'sample-row-return-bus', `${busNote}周六、周日、节假日及调休假日停运。`),
+    makeTransit('sample-return-bus-2', 'bus', '纳沙布线 2：纳沙布岬 → 根室站前总站', '09:55', '10:39', 'sample-row-return-bus', busNote),
+    makeTransit('sample-return-bus-3', 'bus', '纳沙布线 3：纳沙布岬 → 根室站前总站', '12:40', '13:24', 'sample-row-return-bus', busNote),
+    makeTransit('sample-return-bus-4', 'bus', '纳沙布线 4：纳沙布岬 → 根室站前总站', '15:10', '15:54', 'sample-row-return-bus', busNote),
+    makeTransit('sample-return-bus-5', 'bus', '纳沙布线 5：纳沙布岬 → 根室站前总站', '17:20', '18:04', 'sample-row-return-bus', busNote),
+  ];
+  const returnRails = [
+    makeTransit('sample-return-train-1', 'train', '5624D 普通：根室 → 钏路', '08:27', '10:58', 'sample-row-return-rail', jrNote),
+    makeTransit('sample-return-train-2', 'train', '9626D はなさき：根室 → 钏路', '11:12', '13:23', 'sample-row-return-rail', `${jrNote}7月1日至8月31日运转，部分普通车指定席。`),
+    makeTransit('sample-return-train-3', 'train', '9628D 地球探索鉄道号：根室 → 钏路', '13:36', '16:03', 'sample-row-return-rail', `${jrNote}7月1日至8月31日运转，部分普通车指定席。`),
+    makeTransit('sample-return-train-4', 'train', '5630D 普通：根室 → 钏路', '16:08', '18:50', 'sample-row-return-rail', jrNote),
+    makeTransit('sample-return-train-5', 'train', '5632D 普通：根室 → 钏路', '18:59', '21:40', 'sample-row-return-rail', jrNote),
+  ];
+  const selectedRail = rails[2];
+  const selectedBus = outboundBuses[4];
+  const selectedReturnBus = returnBuses[4];
+  const selectedReturnRail = returnRails[4];
   const timeline: Timeline = {
     id: 'sample-plan',
-    name: '根室：火车转公交（示例）',
+    name: '计划 1',
     segments: [
       { transitId: selectedRail.id, order: 0, validConnection: true },
       { transitId: selectedBus.id, order: 1, validConnection: true },
+      { transitId: selectedReturnBus.id, order: 2, validConnection: true },
+      { transitId: selectedReturnRail.id, order: 3, validConnection: true },
     ],
     isValid: true,
-    totalDuration: 205,
+    totalDuration: 480,
     createdAt,
     updatedAt: createdAt,
   };
-  const event: PlanEventBlock = {
-    id: 'sample-event-break',
-    timelineId: timeline.id,
-    startTime: at('08:08'),
-    endTime: at('08:15'),
-    label: '根室站休息',
-    notes: '示例事项',
-  };
   return {
-    transits: new Map([...rails, ...buses].map(transit => [transit.id, transit])),
+    transits: new Map([...rails, ...outboundBuses, ...returnBuses, ...returnRails].map(transit => [transit.id, transit])),
     timelines: new Map([[timeline.id, timeline]]),
-    planEvents: new Map([[event.id, event]]),
+    planEvents: new Map<string, PlanEventBlock>(),
     rows: [
-      { id: 'sample-row-rail', name: '火车' },
-      { id: 'sample-row-bus', name: '公交' },
+      { id: 'sample-row-rail', name: 'JR 根室本线（钏路 → 根室）' },
+      { id: 'sample-row-bus', name: '根室交通 纳沙布线（根室 → 纳沙布岬）' },
+      { id: 'sample-row-return-bus', name: '根室交通 纳沙布线（纳沙布岬 → 根室）' },
+      { id: 'sample-row-return-rail', name: 'JR 根室本线（根室 → 钏路）' },
     ],
     selectedTimelineId: timeline.id,
   };
@@ -218,16 +239,18 @@ export const useTimelineStore = create<TimelineStore>()(
     (set, get) => {
       const sample = createSampleState();
 
+      const captureHistory = (s: TimelineStore): HistoryEntry => ({
+        transits: Array.from(s.transits.entries()),
+        timelines: Array.from(s.timelines.entries()),
+        planEvents: Array.from(s.planEvents.entries()),
+        rows: [...s.rows],
+        selectedTimelineId: s.selectedTimelineId,
+      });
+
       /** Save all editable schedule data to the undo stack. */
       const pushHistory = () => {
         const s = get();
-        const entry: HistoryEntry = {
-          transits: Array.from(s.transits.entries()),
-          timelines: Array.from(s.timelines.entries()),
-          planEvents: Array.from(s.planEvents.entries()),
-          rows: [...s.rows],
-          selectedTimelineId: s.selectedTimelineId,
-        };
+        const entry = captureHistory(s);
         set(st => ({ past: [...st.past.slice(-49), entry], future: [] }));
       };
 
@@ -360,10 +383,7 @@ export const useTimelineStore = create<TimelineStore>()(
         // 时间轴管理
         createTimeline: (name: string) => {
           const id = `timeline-${Date.now()}`;
-          const timeline: Timeline = {
-            id, name, segments: [], isValid: true, totalDuration: 0,
-            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-          };
+          const timeline = createEmptyTimeline(id, name);
           set((state) => {
             const newTimelines = new Map(state.timelines);
             newTimelines.set(id, timeline);
@@ -380,7 +400,13 @@ export const useTimelineStore = create<TimelineStore>()(
             for (const [eventId, event] of newPlanEvents) {
               if (event.timelineId === id) newPlanEvents.delete(eventId);
             }
-            const selectedId = state.selectedTimelineId === id ? null : state.selectedTimelineId;
+            if (newTimelines.size === 0) {
+              const replacement = createEmptyTimeline();
+              newTimelines.set(replacement.id, replacement);
+            }
+            const selectedId = state.selectedTimelineId === id
+              ? newTimelines.keys().next().value ?? null
+              : state.selectedTimelineId;
             return { timelines: newTimelines, planEvents: newPlanEvents, selectedTimelineId: selectedId };
           });
         },
@@ -411,8 +437,7 @@ export const useTimelineStore = create<TimelineStore>()(
           );
           if (overlapsEvent) return false;
 
-          pushHistory();
-
+          const historyEntry = captureHistory(state);
           set((st) => {
             const newTimelines = new Map(st.timelines);
             // A timetable row is an N-choose-1 candidate group. Selecting a new
@@ -427,7 +452,11 @@ export const useTimelineStore = create<TimelineStore>()(
             const updated = { ...timeline, segments: [...keptSegments, newSegment] };
             const revalidated = revalidateTimelineSegments(updated, st.transits, st.config.bufferByTransitType);
             newTimelines.set(timelineId, revalidated);
-            return { timelines: newTimelines };
+            return {
+              timelines: newTimelines,
+              past: [...st.past.slice(-49), historyEntry],
+              future: [],
+            };
           });
 
           return true;
@@ -473,6 +502,7 @@ export const useTimelineStore = create<TimelineStore>()(
         getTimeline: (id: string) => get().timelines.get(id),
 
         selectTimeline: (id: string | null) => {
+          if (get().selectedTimelineId === id) return;
           set({ selectedTimelineId: id });
         },
 
@@ -541,17 +571,37 @@ export const useTimelineStore = create<TimelineStore>()(
 
         clearAll: () => {
           const state = get();
-          if (state.transits.size === 0 && state.timelines.size === 0 &&
-              state.planEvents.size === 0 && state.rows.length === 0) return;
-          pushHistory();
+          const hasMeaningfulData = state.transits.size > 0 || state.planEvents.size > 0 ||
+            state.rows.length > 0 || state.timelines.size > 1 ||
+            Array.from(state.timelines.values()).some(timeline =>
+              timeline.segments.length > 0 || timeline.name !== '计划 1'
+            );
+          if (!hasMeaningfulData) return;
+          const defaultPlan = createEmptyTimeline();
+          const historyEntry = captureHistory(state);
           set({
             transits: new Map(),
-            timelines: new Map(),
+            timelines: new Map([[defaultPlan.id, defaultPlan]]),
             planEvents: new Map(),
             rows: [],
-            selectedTimelineId: null,
+            selectedTimelineId: defaultPlan.id,
             editingTransitId: null,
             formPrefill: null,
+            past: [...state.past.slice(-49), historyEntry],
+            future: [],
+          });
+        },
+
+        restoreDemo: () => {
+          const state = get();
+          const restored = createSampleState();
+          const historyEntry = captureHistory(state);
+          set({
+            ...restored,
+            editingTransitId: null,
+            formPrefill: null,
+            past: [...state.past.slice(-49), historyEntry],
+            future: [],
           });
         },
 
@@ -591,6 +641,7 @@ export const useTimelineStore = create<TimelineStore>()(
         planEvents: Array.from(state.planEvents.entries()),
         rows: state.rows,
         config: state.config,
+        selectedTimelineId: state.selectedTimelineId,
       }),
       merge: (persisted, current) => {
         const p = persisted as {
@@ -599,13 +650,19 @@ export const useTimelineStore = create<TimelineStore>()(
           planEvents?: [string, PlanEventBlock][];
           rows: typeof current.rows;
           config: AppConfig;
+          selectedTimelineId?: string | null;
         };
         const persistedTransits = p.transits ?? [];
         const legacyIds = new Set(persistedTransits.map(([id]) => id));
         const isUntouchedLegacySample = persistedTransits.length === 2 &&
           legacyIds.has('sample-transit-rail') && legacyIds.has('sample-transit-bus') &&
           (p.timelines ?? []).length === 1 && p.timelines?.[0]?.[0] === 'sample-plan';
-        if (isUntouchedLegacySample) {
+        const isUntouchedV14Sample = persistedTransits.length === 11 &&
+          persistedTransits.every(([id, transit]) =>
+            /sample-(?:train|bus)-\d+/.test(id) &&
+            transit.notes === '演示时间，不是实时时刻表；出发前请按官方信息修改。'
+          ) && (p.timelines ?? []).length === 1 && p.timelines?.[0]?.[0] === 'sample-plan';
+        if (isUntouchedLegacySample || isUntouchedV14Sample) {
           return { ...current, config: p.config ?? current.config };
         }
         const transitMap = new Map<string, TransitOption>(persistedTransits);
@@ -617,6 +674,13 @@ export const useTimelineStore = create<TimelineStore>()(
             revalidateTimelineSegments(tl, transitMap, config.bufferByTransitType ?? {}),
           ])
         );
+        if (timelinesMap.size === 0) {
+          const defaultPlan = createEmptyTimeline();
+          timelinesMap.set(defaultPlan.id, defaultPlan);
+        }
+        const selectedTimelineId = p.selectedTimelineId && timelinesMap.has(p.selectedTimelineId)
+          ? p.selectedTimelineId
+          : timelinesMap.keys().next().value ?? null;
         return {
           ...current,
           transits: transitMap,
@@ -624,6 +688,7 @@ export const useTimelineStore = create<TimelineStore>()(
           planEvents: new Map<string, PlanEventBlock>(p.planEvents ?? []),
           rows: p.rows ?? [],
           config,
+          selectedTimelineId,
         };
       },
     }

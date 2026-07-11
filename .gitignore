@@ -13,6 +13,7 @@ visual-*.png
 visual-*.html
 playwright-report/
 test-results/
+tmp/
 
 # Logs
 logs/

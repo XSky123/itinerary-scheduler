@@ -81,7 +81,7 @@ export interface ConstraintValidationResult {
 }
 
 /**
- * 计划事项块 - 用户在最终方案间隙中添加的自定义事项
+ * 计划事项块 - 用户在计划间隙中添加的自定义事项
  */
 export interface PlanEventBlock {
   id: string;

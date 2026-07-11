@@ -25,12 +25,22 @@ try {
   const initial = useTimelineStore.getState()
 
   // A brand-new browser receives the editable Nemuro train-to-bus sample.
-  assert.equal(initial.transits.size, 11)
+  assert.equal(initial.transits.size, 20)
   assert.equal(initial.transits.has('sample-train-2'), true)
   assert.equal(initial.transits.has('sample-bus-3'), true)
+  assert.equal(initial.transits.has('sample-return-bus-5'), true)
+  assert.equal(initial.transits.has('sample-return-train-5'), true)
   assert.equal(initial.timelines.has('sample-plan'), true)
-  assert.equal(initial.planEvents.has('sample-event-break'), true)
+  assert.equal(initial.planEvents.size, 0)
   assert.equal(initial.selectedTimelineId, 'sample-plan')
+  assert.equal(initial.timelines.get('sample-plan').name, '计划 1')
+  assert.deepEqual(initial.timelines.get('sample-plan').segments.map(segment => segment.transitId), [
+    'sample-train-3', 'sample-bus-5', 'sample-return-bus-5', 'sample-return-train-5',
+  ])
+  assert.equal(initial.transits.get('sample-train-3').departureTime.includes('T13:40:00'), true)
+  assert.equal(initial.transits.get('sample-bus-5').arrivalTime.includes('T16:54:00'), true)
+  assert.equal(initial.transits.get('sample-return-bus-5').departureTime.includes('T17:20:00'), true)
+  assert.equal(initial.transits.get('sample-return-train-5').arrivalTime.includes('T21:40:00'), true)
 
   const parsed = parseTimetableText('09:00-11:30 JR Test\n12:00→12:40 Bus Test', {
     date: '2026-07-11', type: 'train', category: 'row-test',
@@ -144,10 +154,18 @@ try {
   // One-click clear removes every editable collection, and one undo restores it all.
   useTimelineStore.getState().clearAll()
   assert.equal(useTimelineStore.getState().transits.size, 0)
-  assert.equal(useTimelineStore.getState().timelines.size, 0)
+  assert.equal(useTimelineStore.getState().timelines.size, 1)
   assert.equal(useTimelineStore.getState().planEvents.size, 0)
   assert.deepEqual(useTimelineStore.getState().rows, [])
-  assert.equal(useTimelineStore.getState().selectedTimelineId, null)
+  assert.equal(useTimelineStore.getState().timelines.get('plan-default').name, '计划 1')
+  assert.equal(useTimelineStore.getState().selectedTimelineId, 'plan-default')
+  useTimelineStore.getState().restoreDemo()
+  assert.equal(useTimelineStore.getState().transits.size, 20)
+  assert.equal(useTimelineStore.getState().rows.length, 4)
+  assert.equal(useTimelineStore.getState().timelines.get('sample-plan').segments.length, 4)
+  useTimelineStore.getState().undo()
+  assert.equal(useTimelineStore.getState().transits.size, 0)
+  assert.equal(useTimelineStore.getState().selectedTimelineId, 'plan-default')
   useTimelineStore.getState().undo()
   assert.equal(useTimelineStore.getState().transits.size, 3)
   assert.equal(useTimelineStore.getState().timelines.has('plan'), true)
@@ -177,6 +195,12 @@ try {
   })
   assert.equal(useTimelineStore.getState().addSegmentToTimeline('plan', 'train-event-conflict'), false)
   assert.equal(useTimelineStore.getState().timelines.get('plan').segments.some(segment => segment.transitId === 'train-alternative'), true)
+
+  // Deleting the last plan immediately creates and activates an empty Plan 1.
+  useTimelineStore.getState().deleteTimeline('plan')
+  assert.equal(useTimelineStore.getState().timelines.size, 1)
+  assert.equal(useTimelineStore.getState().timelines.get('plan-default').name, '计划 1')
+  assert.equal(useTimelineStore.getState().selectedTimelineId, 'plan-default')
 
   console.log('Behavior verification passed')
 } finally {

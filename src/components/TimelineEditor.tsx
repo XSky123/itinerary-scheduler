@@ -11,7 +11,7 @@ const TYPE_EMOJI: Record<TransitType, string> = {
   flight: '✈', train: '🚄', bus: '🚌', shuttle: '🚐', custom: '🚗',
 }
 
-const PLAN_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4']
+const PLAN_COLORS = ['#2563eb', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4']
 const LABEL_COL_WIDTH = 230
 const SNAP_MS = 5 * 60 * 1000
 const DAY_START_H = 7
@@ -24,6 +24,7 @@ interface DragState {
   entityType: 'transit' | 'event'
   action: 'move' | 'resize-l' | 'resize-r'
   startClientX: number
+  startClientY: number
   startDepMs: number
   startArrMs: number
   contentWidthPx: number
@@ -143,7 +144,7 @@ export default function TimelineEditor() {
     createTimeline, deleteTimeline, renameTimeline,
     addSegmentToTimeline, removeSegmentFromTimeline,
     addRow, updateRow, removeRow,
-    setEditingTransitId, past, future, undo, redo, clearAll,
+    setEditingTransitId, past, future, undo, redo, clearAll, restoreDemo,
     addPlanEvent, removePlanEvent,
   } = useTimelineStore(state => ({
     transitsMap: state.transits,
@@ -166,6 +167,7 @@ export default function TimelineEditor() {
     undo: state.undo,
     redo: state.redo,
     clearAll: state.clearAll,
+    restoreDemo: state.restoreDemo,
     addPlanEvent: state.addPlanEvent,
     removePlanEvent: state.removePlanEvent,
   }), shallow)
@@ -179,6 +181,7 @@ export default function TimelineEditor() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
   const [interactionMessage, setInteractionMessage] = useState('')
+  const [confirmAction, setConfirmAction] = useState<'clear' | 'restore' | null>(null)
 
   const dragRef = useRef<DragState | null>(null)
   const dragMovedRef = useRef(false)
@@ -186,6 +189,8 @@ export default function TimelineEditor() {
   const dragPreviewRef = useRef<DragPreview | null>(null)
   const dragFrameRef = useRef<number | null>(null)
   const ganttRef = useRef<HTMLDivElement>(null)
+  const candidateClickTimerRef = useRef<number | null>(null)
+  const confirmTimerRef = useRef<number | null>(null)
 
   const transits = useMemo(() => Array.from(transitsMap.values()), [transitsMap])
   const timelines = useMemo(() => Array.from(timelinesMap.values()), [timelinesMap])
@@ -205,13 +210,17 @@ export default function TimelineEditor() {
   }, [planEventsMap])
   const getPlanEvents = (timelineId: string) => eventsByTimeline.get(timelineId) ?? []
   const groups = useMemo(() => buildGroups(transits, rows), [transits, rows])
+  const laneLayouts = useMemo(() => new Map(
+    groups.map(group => [group.rowId ?? '__uncategorized', layoutTransitLanes(group.transits)])
+  ), [groups])
   const { rangeStart, rangeEnd, totalMs } = useMemo(() => buildTimeRange(transits, planEvents), [transits, planEvents])
   const hours = useMemo(() => buildHourTicks(rangeStart, rangeEnd), [rangeStart, rangeEnd])
   const hourCount = Math.max(1, Math.ceil(totalMs / 3600000))
   const minGanttWidth = LABEL_COL_WIDTH + Math.max(600, hourCount * 90)
   const ganttContentWidth = minGanttWidth - LABEL_COL_WIDTH
 
-  const toLeftPct = (timeMs: number) => Math.max(0, ((timeMs - rangeStart.valueOf()) / totalMs) * 100)
+  const rangeStartMs = rangeStart.valueOf()
+  const toLeftPct = (timeMs: number) => Math.max(0, ((timeMs - rangeStartMs) / totalMs) * 100)
   const toWidthPct = (startMs: number, endMs: number) => Math.max(0.5, ((endMs - startMs) / totalMs) * 100)
 
   const transitPlanMap = useMemo(() => {
@@ -225,21 +234,34 @@ export default function TimelineEditor() {
     }
     return result
   }, [timelines])
+  const hasClearableData = useMemo(() =>
+    transits.length > 0 || planEvents.length > 0 || rows.length > 0 || timelines.length > 1 ||
+    timelines.some(timeline => timeline.segments.length > 0 || timeline.name !== '计划 1'),
+  [transits.length, planEvents.length, rows.length, timelines])
+
+  const planDataByTimeline = useMemo(() => new Map(timelines.map(timeline => {
+    const transits = timeline.segments
+      .map(segment => transitById.get(segment.transitId))
+      .filter(Boolean) as TransitOption[]
+    return [timeline.id, {
+      transits,
+      segmentByTransitId: new Map(timeline.segments.map(segment => [segment.transitId, segment])),
+    }]
+  })), [timelines, transitById])
+
+  const rowColorById = useMemo(() => new Map(
+    rows.map((row, index) => [row.id, getRowColor(index)])
+  ), [rows])
 
   const planColor = (idx: number) => PLAN_COLORS[idx % PLAN_COLORS.length]
 
   const getTransitRowColor = (transit: TransitOption) => {
     if (!transit.category) return '#9ca3af'
-    const rowIdx = rows.findIndex(r => r.id === transit.category)
-    return getRowColor(rowIdx >= 0 ? rowIdx : -1)
+    return rowColorById.get(transit.category) ?? getRowColor(-1)
   }
 
   const getPlanTransits = (timelineId: string) => {
-    const tl = timelines.find(item => item.id === timelineId)
-    if (!tl) return []
-    return tl.segments
-      .map(s => transitById.get(s.transitId))
-      .filter(Boolean) as TransitOption[]
+    return planDataByTimeline.get(timelineId)?.transits ?? []
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -341,16 +363,11 @@ export default function TimelineEditor() {
     if (!ganttRef.current) return
     setInteractionMessage('')
     dragMovedRef.current = false
-    preDragStateRef.current = {
-      transits: transits.map(t => [t.id, t]),
-      timelines: timelines.map(tl => [tl.id, tl]),
-      planEvents: Array.from(planEventsMap.entries()),
-      rows: [...rows],
-      selectedTimelineId,
-    }
+    preDragStateRef.current = null
     dragRef.current = {
       entityId: transit.id, entityType: 'transit', action,
       startClientX: e.clientX,
+      startClientY: e.clientY,
       startDepMs: dayjs(transit.departureTime).valueOf(),
       startArrMs: dayjs(transit.arrivalTime).valueOf(),
       contentWidthPx: ganttRef.current.offsetWidth - LABEL_COL_WIDTH,
@@ -364,9 +381,11 @@ export default function TimelineEditor() {
     const bounds = getEventSlotBounds(ev.timelineId, ev.id)
     if (!bounds) return
     dragMovedRef.current = false
+    preDragStateRef.current = null
     dragRef.current = {
       entityId: ev.id, entityType: 'event', action,
       startClientX: e.clientX,
+      startClientY: e.clientY,
       startDepMs: dayjs(ev.startTime).valueOf(),
       startArrMs: dayjs(ev.endTime).valueOf(),
       contentWidthPx: ganttRef.current.offsetWidth - LABEL_COL_WIDTH,
@@ -382,8 +401,18 @@ export default function TimelineEditor() {
     }
     const onMove = (e: MouseEvent) => {
       const ds = dragRef.current; if (!ds) return
-      if (Math.abs(e.clientX - ds.startClientX) <= 3) return
-      dragMovedRef.current = true
+      if (Math.hypot(e.clientX - ds.startClientX, e.clientY - ds.startClientY) <= 3) return
+      if (!dragMovedRef.current) {
+        const state = useTimelineStore.getState()
+        preDragStateRef.current = {
+          transits: Array.from(state.transits.entries()),
+          timelines: Array.from(state.timelines.entries()),
+          planEvents: Array.from(state.planEvents.entries()),
+          rows: [...state.rows],
+          selectedTimelineId: state.selectedTimelineId,
+        }
+        dragMovedRef.current = true
+      }
       const deltaMs = Math.round(((e.clientX - ds.startClientX) * ds.totalMs / ds.contentWidthPx) / SNAP_MS) * SNAP_MS
       let dep = ds.startDepMs, arr = ds.startArrMs
       if (ds.action === 'move') { dep += deltaMs; arr += deltaMs }
@@ -428,6 +457,7 @@ export default function TimelineEditor() {
             startTime: dayjs(preview.startMs).toISOString(),
             endTime: dayjs(preview.endMs).toISOString(),
           })
+          if (preDragStateRef.current) state.pushHistoryEntry(preDragStateRef.current)
         }
       }
       preDragStateRef.current = null
@@ -454,6 +484,7 @@ export default function TimelineEditor() {
   // ── Context menus ─────────────────────────────────────────────────────────
   const openCtx = (e: React.MouseEvent, transitId: string, fromPlanId?: string) => {
     e.preventDefault(); e.stopPropagation()
+    if (fromPlanId) selectTimeline(fromPlanId)
     setContextMenu({
       entityId: transitId,
       entityType: 'transit',
@@ -471,12 +502,48 @@ export default function TimelineEditor() {
       y: clamp(e.clientY, 8, Math.max(8, window.innerHeight - 120)),
     })
   }
+  const handleCandidateClick = (transitId: string) => {
+    const currentPlan = (selectedTimelineId && timelinesMap.has(selectedTimelineId))
+      ? timelinesMap.get(selectedTimelineId)
+      : timelines[0]
+    const targetId = currentPlan?.id ?? createTimeline('计划 1')
+    const target = useTimelineStore.getState().timelines.get(targetId)
+    if (target?.segments.some(segment => segment.transitId === transitId)) {
+      setInteractionMessage(`已在「${target.name}」中选中这一班。`)
+      return
+    }
+    if (!addSegmentToTimeline(targetId, transitId)) {
+      setInteractionMessage('该班次会覆盖当前计划中的现有事项，请先调整事项时间。')
+      return
+    }
+    setInteractionMessage(`已更新「${target?.name ?? '计划 1'}」。`)
+  }
+  const scheduleCandidateClick = (transitId: string) => {
+    if (candidateClickTimerRef.current !== null) window.clearTimeout(candidateClickTimerRef.current)
+    candidateClickTimerRef.current = window.setTimeout(() => {
+      candidateClickTimerRef.current = null
+      handleCandidateClick(transitId)
+    }, 260)
+  }
+  const handleCandidateDoubleClick = (e: React.MouseEvent, transitId: string) => {
+    e.stopPropagation()
+    if (candidateClickTimerRef.current !== null) {
+      window.clearTimeout(candidateClickTimerRef.current)
+      candidateClickTimerRef.current = null
+    }
+    setEditingTransitId(transitId)
+  }
+  useEffect(() => () => {
+    if (candidateClickTimerRef.current !== null) window.clearTimeout(candidateClickTimerRef.current)
+    if (confirmTimerRef.current !== null) window.clearTimeout(confirmTimerRef.current)
+  }, [])
   const handleTransitKeyDown = (e: React.KeyboardEvent, transit: TransitOption) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      setEditingTransitId(transit.id)
+      handleCandidateClick(transit.id)
       return
     }
+    if (e.key.toLowerCase() === 'e') { e.preventDefault(); setEditingTransitId(transit.id); return }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     e.preventDefault()
     const delta = (e.key === 'ArrowLeft' ? -1 : 1) * SNAP_MS
@@ -513,10 +580,37 @@ export default function TimelineEditor() {
     setContextMenu(null)
   }
 
+  const clearConfirmTimer = () => {
+    if (confirmTimerRef.current !== null) {
+      window.clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
+    }
+  }
+  const armConfirmation = (action: 'clear' | 'restore') => {
+    clearConfirmTimer()
+    setConfirmAction(action)
+    setInteractionMessage(action === 'clear'
+      ? '再点一次「确认清空」：将清空交通行、班次和事项，保留空的「计划 1」（可撤销）。'
+      : '再点一次「确认覆盖」：当前内容将替换为根室官方时刻快照（可撤销）。')
+    confirmTimerRef.current = window.setTimeout(() => {
+      confirmTimerRef.current = null
+      setConfirmAction(null)
+    }, 5000)
+  }
   const handleClearAll = () => {
-    if (transits.length === 0 && timelines.length === 0 && planEvents.length === 0 && rows.length === 0) return
+    if (!hasClearableData) return
+    if (confirmAction !== 'clear') { armConfirmation('clear'); return }
+    clearConfirmTimer()
     clearAll()
-    setInteractionMessage('已清空全部内容。点左边的 ↩ 或按 Ctrl+Z 就能撤销。')
+    setConfirmAction(null)
+    setInteractionMessage('已清空行程内容并保留空的「计划 1」。点 ↩ 或按 Ctrl+Z 可撤销。')
+  }
+  const handleRestoreDemo = () => {
+    if (confirmAction !== 'restore') { armConfirmation('restore'); return }
+    clearConfirmTimer()
+    restoreDemo()
+    setConfirmAction(null)
+    setInteractionMessage('已恢复根室官方时刻快照。点 ↩ 或按 Ctrl+Z 可撤销。')
   }
 
   // ── Plan lane right-click → add event block ───────────────────────────────
@@ -583,7 +677,6 @@ export default function TimelineEditor() {
       >
         {emoji && <span className="row-type-emoji">{emoji}</span>}
         {group.label}
-        {group.transits.length > 1 && <span className="row-choice-count">{group.transits.length} 选 1</span>}
       </span>
     )
   }
@@ -704,8 +797,16 @@ export default function TimelineEditor() {
           <button className="btn-undoredo" onClick={undo} disabled={past.length === 0} title="撤销 (Ctrl+Z)" aria-label="撤销">↩</button>
           <button className="btn-undoredo" onClick={redo} disabled={future.length === 0} title="恢复 (Ctrl+Y)" aria-label="恢复">↪</button>
           <button className="btn-clear-all" onClick={handleClearAll}
-            disabled={transits.length === 0 && timelines.length === 0 && planEvents.length === 0 && rows.length === 0}
-            title="清空全部内容（可以撤销）">一键清空</button>
+            disabled={!hasClearableData}
+            title="清空行程内容，保留空的计划 1（需二次确认，可撤销）"
+            data-confirming={confirmAction === 'clear'}>
+            {confirmAction === 'clear' ? '确认清空' : '一键清空'}
+          </button>
+          <button className="btn-restore-demo" onClick={handleRestoreDemo}
+            title="用根室官方时刻快照覆盖当前内容（需二次确认，可撤销）"
+            data-confirming={confirmAction === 'restore'}>
+            {confirmAction === 'restore' ? '确认覆盖' : '恢复官方示例'}
+          </button>
         </div>
         <form className="plan-create-form" onSubmit={handleCreate}>
           <input type="text" placeholder={`计划 ${timelines.length + 1}`} value={newName} onChange={e => setNewName(e.target.value)} />
@@ -724,7 +825,7 @@ export default function TimelineEditor() {
           {/* Source rows */}
           {groups.map(group => {
             const rowColor = getRowColor(group.colorIndex)
-            const laneLayout = layoutTransitLanes(group.transits)
+            const laneLayout = laneLayouts.get(group.rowId ?? '__uncategorized')!
             return (
               <div key={group.rowId ?? '__uncategorized'} className="gantt-row"
                 style={{ minHeight: Math.max(54, laneLayout.laneCount * 46 + 8) }}>
@@ -760,10 +861,11 @@ export default function TimelineEditor() {
                           height: '42px',
                         }}
                         onMouseDown={e => startDrag(e, transit, 'move')}
-                        onClick={() => { if (!dragMovedRef.current) setEditingTransitId(transit.id) }}
+                        onClick={() => { if (!dragMovedRef.current) scheduleCandidateClick(transit.id) }}
+                        onDoubleClick={e => handleCandidateDoubleClick(e, transit.id)}
                         onContextMenu={e => openCtx(e, transit.id)}
                         onKeyDown={e => handleTransitKeyDown(e, transit)}
-                        title={[transit.name, `${dayjs(startMs).format('HH:mm')} → ${dayjs(endMs).format('HH:mm')}`, formatDuration(Math.round((endMs - startMs) / 60000)), transit.notes, '点击或按 Enter 编辑 · 拖拽/方向键移动 · 右键管理计划'].filter(Boolean).join('\n')}
+                        title={[transit.name, `${dayjs(startMs).format('HH:mm')} → ${dayjs(endMs).format('HH:mm')}`, formatDuration(Math.round((endMs - startMs) / 60000)), transit.notes, '单击选入当前计划 · 双击编辑 · 拖拽移动 · 右键精确管理'].filter(Boolean).join('\n')}
                         role="button" tabIndex={0} aria-label={transit.name}
                       >
                         <div className="resize-handle resize-l" onMouseDown={e => { e.stopPropagation(); startDrag(e, transit, 'resize-l') }} />
@@ -788,19 +890,21 @@ export default function TimelineEditor() {
           {timelines.length > 0 && (
             <>
               <div className="gantt-plan-separator">
-                <div className="gantt-label-col"><span className="gantt-label gantt-separator-label">最终方案</span></div>
+                <div className="gantt-label-col"><span className="gantt-label gantt-separator-label">计划</span></div>
                 <div style={{ flex: 1, borderTop: '2px dashed #c8cbe0' }} />
               </div>
               {timelines.map((tl, idx) => {
                 const color = planColor(idx)
-                const planTransits = tl.segments.map(s => transitById.get(s.transitId)).filter(Boolean) as TransitOption[]
+                const planData = planDataByTimeline.get(tl.id)!
+                const planTransits = planData.transits
                 const isSelected = selectedTimelineId === tl.id
                 const extraHeight = getPlanRowExtraHeight(tl, planTransits)
                 return (
                   <div key={tl.id} className={`gantt-row gantt-plan-row${isSelected ? ' plan-row-selected' : ''}`}
-                    style={{ minHeight: 60 + extraHeight }}
+                    style={{ minHeight: 60 + extraHeight, '--active-plan-color': color } as React.CSSProperties}
+                    onClick={() => selectTimeline(tl.id)}
                   >
-                    <div className="gantt-label-col gantt-plan-label-col" onClick={() => selectTimeline(isSelected ? null : tl.id)}>
+                    <div className="gantt-label-col gantt-plan-label-col">
                       <span className="plan-color-dot" style={{ background: color }} />
                       {editingPlanId === tl.id ? (
                         <input
@@ -816,8 +920,8 @@ export default function TimelineEditor() {
                         <span
                           className="gantt-label gantt-label-editable"
                           style={{ color }}
-                          title={tl.name}
-                          onClick={e => { e.stopPropagation(); startPlanEdit(tl) }}
+                          title={`${tl.name}（单击激活，双击改名）`}
+                          onDoubleClick={e => { e.stopPropagation(); startPlanEdit(tl) }}
                         >{tl.name}</span>
                       )}
                       {!tl.isValid && <span className="plan-row-invalid">!</span>}
@@ -830,7 +934,7 @@ export default function TimelineEditor() {
                       {planTransits.map(transit => {
                         const blockColor = getTransitRowColor(transit)
                         const rowName = transit.category ? rows.find(r => r.id === transit.category)?.name : null
-                        const segment = tl.segments.find(s => s.transitId === transit.id)
+                        const segment = planData.segmentByTransitId.get(transit.id)
                         const isConflict = segment ? !segment.validConnection : false
                         const startMs = dragPreview?.entityType === 'transit' && dragPreview.entityId === transit.id
                           ? dragPreview.startMs : dayjs(transit.departureTime).valueOf()
@@ -845,8 +949,9 @@ export default function TimelineEditor() {
                               width: `${toWidthPct(startMs, endMs)}%`,
                               '--plan-color': blockColor,
                             } as React.CSSProperties}
-                            title={[rowName, transit.name, `${dayjs(startMs).format('HH:mm')} → ${dayjs(endMs).format('HH:mm')}`, transit.notes, '左键在左栏编辑 · 右键移出计划'].filter(Boolean).join('\n')}
-                            onClick={() => setEditingTransitId(transit.id)}
+                            title={[rowName, transit.name, `${dayjs(startMs).format('HH:mm')} → ${dayjs(endMs).format('HH:mm')}`, transit.notes, '单击激活此计划 · 双击编辑班次 · 右键从计划移除'].filter(Boolean).join('\n')}
+                            onClick={e => { e.stopPropagation(); selectTimeline(tl.id) }}
+                            onDoubleClick={e => { e.stopPropagation(); setEditingTransitId(transit.id) }}
                             onContextMenu={e => openCtx(e, transit.id, tl.id)}
                           >
                             {rowName && <div className="block-row-name">{rowName}</div>}
@@ -861,7 +966,7 @@ export default function TimelineEditor() {
                 )
               })}
               <div className="gantt-add-row gantt-add-plan" onClick={handleAddPlan}>
-                <div className="gantt-label-col gantt-add-row-label">＋ 添加方案</div>
+                <div className="gantt-label-col gantt-add-row-label">＋ 添加计划</div>
                 <div style={{ flex: 1 }} />
               </div>
             </>
@@ -870,7 +975,7 @@ export default function TimelineEditor() {
       </div>
 
       <div className="plan-footer">
-        <span className="plan-footer-hint">点击块在左栏编辑 · 拖拽移动 · 右键管理计划 · 计划行空白处右键添加事项 · Ctrl+Z 撤销</span>
+        <span className="plan-footer-hint">单击候选班次更新当前计划 · 双击编辑 · 拖拽移动 · 右键精确管理 · Ctrl+Z 撤销</span>
         {interactionMessage && <span className="plan-footer-error" role="status">{interactionMessage}</span>}
         {selectedTimelineId && (
           <><span className="plan-footer-sep">｜</span>
@@ -893,7 +998,8 @@ export default function TimelineEditor() {
               <>
                 <div className="ctx-header">移出计划</div>
                 <button className="ctx-item" onClick={() => removeFromPlan(contextMenu.fromPlanId!, contextMenu.entityId)}>
-                  <span className="ctx-check" style={{ color: '#ef4444' }}>×</span>从此计划移除
+                  <span className="ctx-check" style={{ color: '#ef4444' }}>×</span>
+                  从「{timelines.find(timeline => timeline.id === contextMenu.fromPlanId)?.name ?? '此计划'}」移除
                 </button>
                 <div style={{ borderTop: '1px solid #f3f4f6', margin: '4px 0' }} />
                 {timelines.filter(t => t.id !== contextMenu.fromPlanId).map((tl, i) => {
