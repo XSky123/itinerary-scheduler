@@ -334,19 +334,20 @@ export default function TransitLibrary({
 
   return (
     <aside className={`panel panel-library${collapsed ? ' collapsed' : ''}`}>
-      {collapsed ? (
-        <button
-          type="button"
-          className="library-expand-btn"
-          onClick={() => onCollapsedChange(false)}
-          title="展开班次库"
-          aria-label="展开班次库"
-        >
-          <span aria-hidden="true">›</span>
-          <span className="library-expand-label">班次库</span>
-          <span className="badge">{transits.length}</span>
-        </button>
-      ) : (<>
+      <button
+        type="button"
+        className="library-expand-btn"
+        onClick={() => onCollapsedChange(false)}
+        title="展开班次库"
+        aria-label="展开班次库"
+        aria-hidden={!collapsed}
+        tabIndex={collapsed ? 0 : -1}
+      >
+        <span aria-hidden="true">›</span>
+        <span className="library-expand-label">班次库</span>
+        <span className="badge">{transits.length}</span>
+      </button>
+      <div className="library-expanded-content" aria-hidden={collapsed}>
       <div className="panel-header">
         <h2>班次库 <span className="badge">{transits.length}</span></h2>
         <div className="panel-header-actions">
@@ -458,7 +459,7 @@ export default function TransitLibrary({
           })
         )}
       </div>
-      </>)}
+      </div>
     </aside>
   )
 }

@@ -1,9 +1,12 @@
-import { useCallback, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import TransitLibrary from './components/TransitLibrary'
 import TimelineEditor from './components/TimelineEditor'
 import ItineraryPreview from './components/ItineraryPreview'
 import { APP_VERSION, BUILD_DATETIME } from './version'
 import './App.css'
+
+const StableTimelineEditor = memo(TimelineEditor)
+const StableItineraryPreview = memo(ItineraryPreview)
 
 function App() {
   const [libraryCollapsed, setLibraryCollapsed] = useState(
@@ -31,8 +34,8 @@ function App() {
           collapsed={libraryCollapsed}
           onCollapsedChange={handleLibraryCollapsedChange}
         />
-        <TimelineEditor />
-        <ItineraryPreview />
+        <StableTimelineEditor />
+        <StableItineraryPreview />
       </div>
       <footer className="app-footer">{APP_VERSION} · {BUILD_DATETIME}</footer>
     </div>
