@@ -1,6 +1,6 @@
 {
   "name": "itinerary-scheduler",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "约束驱动的可视化行程排程工具",
   "license": "MIT",
   "homepage": "https://xsky123.github.io/itinerary-scheduler/",
